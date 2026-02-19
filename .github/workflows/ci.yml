@@ -35,11 +35,11 @@ jobs:
         run: |
           set -euo pipefail
           test -f .github/workflows/publish-testpypi.yml
-          test -f .github/workflows/publish-pypi.yml
+          test -f .github/workflows/release.yml
           grep -Eq 'id-token:[[:space:]]*write' .github/workflows/publish-testpypi.yml
-          grep -Eq 'id-token:[[:space:]]*write' .github/workflows/publish-pypi.yml
+          grep -Eq 'id-token:[[:space:]]*write' .github/workflows/release.yml
           grep -Eq 'gh-action-pypi-publish@' .github/workflows/publish-testpypi.yml
-          grep -Eq 'gh-action-pypi-publish@' .github/workflows/publish-pypi.yml
+          grep -Eq 'gh-action-pypi-publish@' .github/workflows/release.yml
           grep -Eq 'repository-url:[[:space:]]*https://test\\.pypi\\.org/legacy/' .github/workflows/publish-testpypi.yml
 
   test:

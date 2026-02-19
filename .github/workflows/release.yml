@@ -16,7 +16,7 @@ jobs:
     name: Publish to PyPI
     runs-on: ubuntu-latest
     environment:
-      name: pypi
+      name: release
       url: https://pypi.org/p/skill-scanner
     permissions:
       id-token: write

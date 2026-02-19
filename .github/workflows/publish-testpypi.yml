@@ -9,7 +9,7 @@ on:
       - "uv.lock"
       - "README.md"
       - ".github/workflows/publish-testpypi.yml"
-      - ".github/workflows/publish-pypi.yml"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 concurrency:
@@ -24,7 +24,7 @@ jobs:
     name: Publish to TestPyPI
     runs-on: ubuntu-latest
     environment:
-      name: testpypi
+      name: test
       url: https://test.pypi.org/p/skill-scanner
     permissions:
       id-token: write
