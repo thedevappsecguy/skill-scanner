@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/ci.yml)
 [![Publish TestPyPI](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/publish-testpypi.yml/badge.svg?branch=main)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/publish-testpypi.yml)
+[![Publish PyPI](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/release.yml/badge.svg)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/release.yml)
 [![zizmor](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/zizmor.yml/badge.svg?branch=main)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/zizmor.yml)
 
 `skill-scanner` reviews AI skill and instruction artifacts for security risk using:
