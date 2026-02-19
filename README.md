@@ -1,58 +1,136 @@
 # skill-scanner
 
-`skill-scanner` scans agent skills and instruction artifacts for risky patterns using OpenAI and VirusTotal analysis (no hardcoded static rule checks in scan flow).
+`skill-scanner` reviews AI skill and instruction artifacts for security risk using:
+- OpenAI analysis
+- VirusTotal analysis
 
-## Install
+## Requirements
+
+- Python 3.11+
+- [`uv`](https://docs.astral.sh/uv/)
+- OpenAI and/or VirusTotal API key (at least one)
+
+## Install (from source)
 
 ```bash
 uv sync --all-extras --group dev
 ```
 
-## CLI
-
-Primary command:
+Run with:
 
 ```bash
-skill-scanner --help
+uv run skill-scanner --help
 ```
 
 Alias:
 
 ```bash
-skillscan --help
+uv run skillscan --help
 ```
+
+## What gets scanned
+
+By default, `discover` and `scan` detect common skill/instruction files (for example `SKILL.md`, `AGENTS.md`, `*.instructions.md`, `*.prompt.md`, `.mdc`, and related artifacts).
+
+Use `--path` to target a specific file or folder.
 
 ## Quick start
 
 ```bash
-skill-scanner scan --format summary
-skill-scanner discover --format json
-skill-scanner providers
-skill-scanner doctor
+# See targets
+uv run skill-scanner discover --format json
+
+# Verify key/model configuration
+uv run skill-scanner doctor
+
+# Run a combined scan (if both keys are configured)
+uv run skill-scanner scan --format summary
 ```
 
-## API keys and analyzer selection
+## Key configuration and analyzer selection
 
-Set keys via environment variables:
+`scan` requires at least one analyzer enabled.
+
+- If only `OPENAI_API_KEY` is available, AI runs and VT is disabled.
+- If only `VT_API_KEY` is available, VT runs and AI is disabled.
+- If both keys are available, VT findings are included and VT context is passed into AI analysis.
+- You can disable either analyzer with `--no-ai` or `--no-vt`.
+
+## API key safety
+
+Never commit API keys. This repository ignores `.env` by default.
+
+### Option 1: Shell environment variables
 
 ```bash
-export OPENAI_API_KEY=...
-export VT_API_KEY=...
+export OPENAI_API_KEY="..."
+export VT_API_KEY="..."
+uv run skill-scanner scan --format summary
 ```
 
-Or place them in a local `.env` file (which should be gitignored):
+### Option 2: Local `.env` file
 
 ```bash
 OPENAI_API_KEY=...
 VT_API_KEY=...
 ```
 
-Run `skill-scanner doctor` to verify key status and see setup hints.
+Then run:
 
-`scan` behavior with partial keys:
+```bash
+uv run skill-scanner doctor
+uv run skill-scanner scan --format summary
+```
 
-- If only `OPENAI_API_KEY` is set, AI analysis runs and VirusTotal is auto-disabled with a CLI hint.
-- If only `VT_API_KEY` is set, VirusTotal runs and AI is auto-disabled with a CLI hint.
-- If both are enabled, VirusTotal intel is passed into AI context and VT verdict findings appear in ranked findings.
-- You can force disable either analyzer with `--no-ai` or `--no-vt`.
-- If neither analyzer is enabled, `scan` exits with guidance to add keys or re-enable an analyzer.
+### Option 3: 1Password secret references (recommended)
+
+Use 1Password secret references instead of plaintext secrets in `.env`:
+
+```bash
+OPENAI_API_KEY=op://Engineering/OpenAI/api_key
+VT_API_KEY=op://Engineering/VirusTotal/api_key
+```
+
+Run the scanner through 1Password CLI so references are resolved at runtime:
+
+```bash
+op run --env-file=.env -- uv run skill-scanner scan --format summary
+```
+
+Security best practice:
+- Prefer a 1Password Service Account scoped to only the vault/items required for scanning (least privilege).
+
+Reference:
+- https://developer.1password.com/docs/cli/secret-references/
+
+## Output formats
+
+`scan --format` supports:
+- `table` (default)
+- `summary`
+- `json`
+- `sarif`
+
+You can write output to a file with `--output <path>`.
+
+## Useful commands
+
+```bash
+# List providers
+uv run skill-scanner providers
+
+# Scan one path only
+uv run skill-scanner scan --path ./some/skill/folder --format summary
+
+# Filter to medium+
+uv run skill-scanner scan --min-severity medium --format summary
+
+# Non-zero exit if high+ findings exist
+uv run skill-scanner scan --fail-on high --format summary
+```
+
+## Exit behavior
+
+- `0`: scan completed and fail threshold not hit
+- `1`: `--fail-on` threshold matched
+- `2`: no analyzers enabled (for example missing keys combined with flags)
