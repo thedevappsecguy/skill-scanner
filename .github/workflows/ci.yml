@@ -36,11 +36,13 @@ jobs:
           set -euo pipefail
           test -f .github/workflows/publish-testpypi.yml
           test -f .github/workflows/release.yml
-          grep -Eq 'id-token:[[:space:]]*write' .github/workflows/publish-testpypi.yml
-          grep -Eq 'id-token:[[:space:]]*write' .github/workflows/release.yml
-          grep -Eq 'gh-action-pypi-publish@' .github/workflows/publish-testpypi.yml
-          grep -Eq 'gh-action-pypi-publish@' .github/workflows/release.yml
-          grep -Eq 'repository-url:[[:space:]]*https://test\\.pypi\\.org/legacy/' .github/workflows/publish-testpypi.yml
+          grep -Fq 'name: test' .github/workflows/publish-testpypi.yml
+          grep -Fq 'name: release' .github/workflows/release.yml
+          grep -Fq 'id-token: write' .github/workflows/publish-testpypi.yml
+          grep -Fq 'id-token: write' .github/workflows/release.yml
+          grep -Fq 'gh-action-pypi-publish@' .github/workflows/publish-testpypi.yml
+          grep -Fq 'gh-action-pypi-publish@' .github/workflows/release.yml
+          grep -Fq 'repository-url: https://test.pypi.org/legacy/' .github/workflows/publish-testpypi.yml
 
   test:
     needs: trusted-publishing-config
