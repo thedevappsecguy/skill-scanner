@@ -1,5 +1,9 @@
 # skill-scanner
 
+[![CI](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/ci.yml)
+[![Publish TestPyPI](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/publish-testpypi.yml/badge.svg?branch=main)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/publish-testpypi.yml)
+[![zizmor](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/zizmor.yml/badge.svg?branch=main)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/zizmor.yml)
+
 `skill-scanner` reviews AI skill and instruction artifacts for security risk using:
 - OpenAI analysis
 - VirusTotal analysis
@@ -58,33 +62,7 @@ uv run skill-scanner scan --format summary
 
 ## API key safety
 
-Never commit API keys. This repository ignores `.env` by default.
-
-### Option 1: Shell environment variables
-
-```bash
-export OPENAI_API_KEY="..."
-export VT_API_KEY="..."
-uv run skill-scanner scan --format summary
-```
-
-### Option 2: Local `.env` file
-
-```bash
-OPENAI_API_KEY=...
-VT_API_KEY=...
-```
-
-Then run:
-
-```bash
-uv run skill-scanner doctor
-uv run skill-scanner scan --format summary
-```
-
-### Option 3: 1Password secret references (recommended)
-
-Use 1Password secret references instead of plaintext secrets in `.env`:
+Use 1Password secret references instead of plaintext secrets:
 
 ```bash
 OPENAI_API_KEY=op://Engineering/OpenAI/api_key
