@@ -1,0 +1,58 @@
+[project]
+name = "skill-scanner"
+version = "0.1.0"
+description = "Security scanner for AI agent skills and instruction artifacts"
+readme = "README.md"
+authors = [{ name = "skill-scanner" }]
+requires-python = ">=3.11"
+dependencies = [
+    "httpx==0.28.1",
+    "pydantic==2.12.5",
+    "pyyaml==6.0.3",
+    "rich==14.3.2",
+    "typer==0.24.0",
+]
+
+[project.optional-dependencies]
+openai = ["openai==2.21.0"]
+virustotal = ["vt-py==0.22.0"]
+all = ["openai==2.21.0", "vt-py==0.22.0"]
+
+[dependency-groups]
+dev = [
+    "mypy==1.19.1",
+    "pytest==9.0.2",
+    "pytest-cov==7.0.0",
+    "ruff==0.15.1",
+    "types-PyYAML==6.0.12.20250915",
+]
+
+[project.scripts]
+skill-scanner = "skill_scanner.cli:app"
+skillscan = "skill_scanner.cli:app"
+
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/skill_scanner"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008", "E501", "SIM108", "SIM115"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

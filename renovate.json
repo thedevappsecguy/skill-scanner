@@ -1,0 +1,75 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    "helpers:pinGitHubActionDigests",
+    "helpers:pinGitHubActionDigestsToSemver",
+    "schedule:weekly"
+  ],
+  "dependencyDashboard": true,
+  "minimumReleaseAge": "7 days",
+  "rangeStrategy": "pin",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 5am on monday"
+    ]
+  },
+  "packageRules": [
+    {
+      "groupName": "github-actions",
+      "matchManagers": [
+        "github-actions"
+      ]
+    },
+    {
+      "groupName": "Testing Framework",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchPackageNames": [
+        "pytest",
+        "/^pytest-/"
+      ]
+    },
+    {
+      "groupName": "Type Checking & Validation",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchPackageNames": [
+        "mypy",
+        "types-PyYAML",
+        "pydantic",
+        "pydantic-core"
+      ]
+    },
+    {
+      "groupName": "Dev Tools",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchPackageNames": [
+        "ruff"
+      ]
+    },
+    {
+      "groupName": "Runtime Dependencies",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchPackageNames": [
+        "httpx",
+        "openai",
+        "typer",
+        "vt-py"
+      ]
+    },
+    {
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}
