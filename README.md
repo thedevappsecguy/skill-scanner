@@ -101,6 +101,12 @@ uv run skill-scanner providers
 # Scan one path only
 uv run skill-scanner scan --path ./some/skill/folder --format summary
 
+# List discovered targets without running analyzers
+uv run skill-scanner scan --list-targets
+
+# Scan only selected discovered targets (repeat --target)
+uv run skill-scanner scan --target /absolute/path/to/SKILL.md --target /absolute/path/to/AGENTS.md --format summary
+
 # Filter to medium+
 uv run skill-scanner scan --min-severity medium --format summary
 
