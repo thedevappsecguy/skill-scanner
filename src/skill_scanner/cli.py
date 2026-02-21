@@ -12,7 +12,7 @@ from skill_scanner.config import load_settings
 from skill_scanner.discovery.finder import discover_targets
 from skill_scanner.models.findings import Severity
 from skill_scanner.models.reports import ScanReport, SkillReport
-from skill_scanner.models.targets import Platform, Scope
+from skill_scanner.models.targets import Platform, ScanTarget, Scope
 from skill_scanner.output.console import render_console_report
 from skill_scanner.output.json_export import export_json_report
 from skill_scanner.output.sarif_export import export_sarif_report
@@ -87,6 +87,12 @@ def scan(
     path: str | None = typer.Option(None, help="Custom file or directory path to scan."),
     platform: Platform = typer.Option(Platform.ALL, help="Platform to target."),
     scope: list[Scope] = typer.Option([], help="Scope filter, repeat for multiple."),
+    target: list[str] = typer.Option(
+        [],
+        "--target",
+        help="Target entry path from discovery output, repeat for multiple.",
+    ),
+    list_targets: bool = typer.Option(False, help="List discovered scan targets and exit."),
     provider: str | None = typer.Option(None, help="AI provider (env: SKILLSCAN_PROVIDER)."),
     model: str | None = typer.Option(None, help="Model name (env: SKILLSCAN_MODEL)."),
     no_ai: bool = typer.Option(False, help="Disable AI analysis (OpenAI key env: OPENAI_API_KEY)."),
@@ -99,9 +105,20 @@ def scan(
     output: str | None = typer.Option(None, help="Optional output file path."),
     no_color: bool = typer.Option(False, help="Disable color output."),
 ) -> None:
-    settings = load_settings(provider=provider, model=model)
     selected_scopes = set(scope) if scope else {Scope.REPO, Scope.USER, Scope.SYSTEM, Scope.EXTENSION}
     targets = discover_targets(path=path, platform=platform, scopes=selected_scopes)
+    if target:
+        targets = _filter_targets(targets, target)
+        if not targets:
+            console.print("No discovered targets matched --target values.")
+            console.print("Use `skill-scanner scan --list-targets` to view valid target entry paths.")
+            raise typer.Exit(code=2)
+
+    if list_targets:
+        _print_targets(targets)
+        raise typer.Exit()
+
+    settings = load_settings(provider=provider, model=model)
 
     enable_ai, enable_vt = _resolve_analyzer_selection(settings, no_ai=no_ai, no_vt=no_vt)
     if not enable_ai and not enable_vt:
@@ -217,6 +234,31 @@ def _apply_min_severity_filter(report: ScanReport, min_severity: Severity) -> No
 def _build_summary(reports: list[SkillReport]) -> dict[str, int]:
     counts = Counter(item.risk_level.value for item in reports)
     return {key: counts.get(key, 0) for key in ["critical", "high", "medium", "low", "clean"]}
+
+
+def _filter_targets(targets: list[ScanTarget], requested: list[str]) -> list[ScanTarget]:
+    selectors: set[str] = set()
+    for requested_target in requested:
+        raw = requested_target.strip()
+        if not raw:
+            continue
+        selectors.add(raw)
+        selectors.add(str(Path(raw).expanduser().resolve()))
+
+    matched: list[ScanTarget] = []
+    for discovered_target in targets:
+        entry = str(Path(discovered_target.entry_path).resolve())
+        if discovered_target.entry_path in selectors or entry in selectors:
+            matched.append(discovered_target)
+    return matched
+
+
+def _print_targets(targets: list[ScanTarget]) -> None:
+    console.print(f"Discovered {len(targets)} targets")
+    for index, item in enumerate(targets, start=1):
+        console.print(
+            f"{index:>3}. {item.kind.value:<12} {item.platform.value:<8} {item.scope.value:<9} {item.entry_path}"
+        )
 
 
 def _has_failures(report: object, threshold: Severity) -> bool:

@@ -21,8 +21,6 @@ SUPPORTED_SUFFIXES = {
     ".agent.md",
     ".mdc",
     ".md",
-    ".json",
-    ".toml",
 }
 
 IGNORED_DIR_NAMES = {
@@ -200,10 +198,6 @@ def _kind_from_file(path: Path) -> TargetKind | None:
         return TargetKind.PROMPT
     if name.endswith(".agent.md"):
         return TargetKind.AGENT
-    if name == "mcp.json":
-        return TargetKind.MCP
-    if name in {"settings.json", "extensions.json", "config.toml"}:
-        return TargetKind.CONFIG
     if name.endswith(".mdc") or name == ".cursorrules":
         return TargetKind.RULE
     if name.endswith(".md"):
@@ -220,7 +214,7 @@ def _targets_from_custom_path(path: Path, platform: Platform, scope: Scope) -> l
             if not file_path.is_file():
                 continue
             suffix = file_path.suffix.lower()
-            if file_path.name in SUPPORTED_SUFFIXES or suffix in {".md", ".json", ".toml", ".mdc"}:
+            if file_path.name in SUPPORTED_SUFFIXES or suffix in {".md", ".mdc"}:
                 candidates.append(file_path)
     targets: list[ScanTarget] = []
     seen: set[str] = set()

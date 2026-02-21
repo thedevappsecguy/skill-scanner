@@ -17,6 +17,19 @@ def test_discover_missing_path_returns_empty(tmp_path: Path) -> None:
     assert targets == []
 
 
+def test_custom_path_ignores_json_and_toml_targets(tmp_path: Path) -> None:
+    (tmp_path / "SKILL.md").write_text("No frontmatter.\n", encoding="utf-8")
+    (tmp_path / "mcp.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "extensions.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "config.toml").write_text("name = 'test'\n", encoding="utf-8")
+
+    targets = discover_targets(path=str(tmp_path), platform=Platform.ALL)
+    kinds = [target.kind.value for target in targets]
+
+    assert kinds == ["skill"]
+
+
 def test_custom_root_skill_limits_collected_files(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "config").write_text("[core]\n", encoding="utf-8")

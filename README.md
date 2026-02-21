@@ -35,7 +35,7 @@ uv run skillscan --help
 
 ## What gets scanned
 
-By default, `discover` and `scan` detect common skill/instruction files (for example `SKILL.md`, `AGENTS.md`, `*.instructions.md`, `*.prompt.md`, `.mdc`, and related artifacts).
+By default, `discover` and `scan` detect markdown-based skill/instruction artifacts (for example `SKILL.md`, `AGENTS.md`, `CLAUDE.md`, `*.instructions.md`, `*.prompt.md`, `*.agent.md`, `.mdc`).
 
 Use `--path` to target a specific file or folder.
 
@@ -66,8 +66,8 @@ uv run skill-scanner scan --format summary
 Use 1Password secret references instead of plaintext secrets:
 
 ```bash
-OPENAI_API_KEY=op://Engineering/OpenAI/api_key
-VT_API_KEY=op://Engineering/VirusTotal/api_key
+OPENAI_API_KEY=op://Developer/OpenAI/api_key
+VT_API_KEY=op://Developer/VirusTotal/api_key
 ```
 
 Run the scanner through 1Password CLI so references are resolved at runtime:
@@ -101,6 +101,12 @@ uv run skill-scanner providers
 # Scan one path only
 uv run skill-scanner scan --path ./some/skill/folder --format summary
 
+# List discovered targets without running analyzers
+uv run skill-scanner scan --list-targets
+
+# Scan only selected discovered targets (repeat --target)
+uv run skill-scanner scan --target /absolute/path/to/SKILL.md --target /absolute/path/to/AGENTS.md --format summary
+
 # Filter to medium+
 uv run skill-scanner scan --min-severity medium --format summary
 
@@ -108,8 +114,10 @@ uv run skill-scanner scan --min-severity medium --format summary
 uv run skill-scanner scan --fail-on high --format summary
 ```
 
+`--list-targets` can be used without API keys because it only runs discovery and exits.
+
 ## Exit behavior
 
 - `0`: scan completed and fail threshold not hit
 - `1`: `--fail-on` threshold matched
-- `2`: no analyzers enabled (for example missing keys combined with flags)
+- `2`: no analyzers enabled (for example missing keys combined with flags), or `--target` did not match any discovered target
