@@ -66,8 +66,8 @@ uv run skill-scanner scan --format summary
 Use 1Password secret references instead of plaintext secrets:
 
 ```bash
-OPENAI_API_KEY=op://Engineering/OpenAI/api_key
-VT_API_KEY=op://Engineering/VirusTotal/api_key
+OPENAI_API_KEY=op://Developer/OpenAI/api_key
+VT_API_KEY=op://Developer/VirusTotal/api_key
 ```
 
 Run the scanner through 1Password CLI so references are resolved at runtime:
@@ -114,8 +114,10 @@ uv run skill-scanner scan --min-severity medium --format summary
 uv run skill-scanner scan --fail-on high --format summary
 ```
 
+`--list-targets` can be used without API keys because it only runs discovery and exits.
+
 ## Exit behavior
 
 - `0`: scan completed and fail threshold not hit
 - `1`: `--fail-on` threshold matched
-- `2`: no analyzers enabled (for example missing keys combined with flags)
+- `2`: no analyzers enabled (for example missing keys combined with flags), or `--target` did not match any discovered target
