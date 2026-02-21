@@ -35,7 +35,7 @@ uv run skillscan --help
 
 ## What gets scanned
 
-By default, `discover` and `scan` detect common skill/instruction files (for example `SKILL.md`, `AGENTS.md`, `*.instructions.md`, `*.prompt.md`, `.mdc`, and related artifacts).
+By default, `discover` and `scan` detect markdown-based skill/instruction artifacts (for example `SKILL.md`, `AGENTS.md`, `CLAUDE.md`, `*.instructions.md`, `*.prompt.md`, `*.agent.md`, `.mdc`).
 
 Use `--path` to target a specific file or folder.
 

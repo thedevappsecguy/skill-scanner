@@ -29,9 +29,6 @@ REPO_PATTERNS: tuple[DiscoveryPattern, ...] = (
     DiscoveryPattern(Platform.CURSOR, Scope.REPO, ".cursor/skills/*/SKILL.md", TargetKind.SKILL),
     DiscoveryPattern(Platform.VSCODE, Scope.REPO, ".github/prompts/**/*.prompt.md", TargetKind.PROMPT),
     DiscoveryPattern(Platform.VSCODE, Scope.REPO, ".github/agents/**/*.agent.md", TargetKind.AGENT),
-    DiscoveryPattern(Platform.VSCODE, Scope.REPO, ".vscode/mcp.json", TargetKind.MCP),
-    DiscoveryPattern(Platform.VSCODE, Scope.REPO, ".vscode/settings.json", TargetKind.CONFIG),
-    DiscoveryPattern(Platform.VSCODE, Scope.REPO, ".vscode/extensions.json", TargetKind.CONFIG),
 )
 
 USER_PATTERNS: tuple[DiscoveryPattern, ...] = (
@@ -39,7 +36,6 @@ USER_PATTERNS: tuple[DiscoveryPattern, ...] = (
     DiscoveryPattern(Platform.CLAUDE, Scope.USER, ".claude/CLAUDE.md", TargetKind.INSTRUCTION),
     DiscoveryPattern(Platform.CODEX, Scope.USER, ".codex/skills/*/SKILL.md", TargetKind.SKILL),
     DiscoveryPattern(Platform.CODEX, Scope.USER, ".codex/skills/.system/*/SKILL.md", TargetKind.SKILL),
-    DiscoveryPattern(Platform.CODEX, Scope.USER, ".codex/config.toml", TargetKind.CONFIG),
     DiscoveryPattern(Platform.CODEX, Scope.USER, ".agents/skills/*/SKILL.md", TargetKind.SKILL),
     DiscoveryPattern(Platform.COPILOT, Scope.USER, ".copilot/copilot-instructions.md", TargetKind.INSTRUCTION),
     DiscoveryPattern(Platform.COPILOT, Scope.USER, ".copilot/skills/*/SKILL.md", TargetKind.SKILL),
