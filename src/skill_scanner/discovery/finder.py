@@ -20,11 +20,8 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_SUFFIXES = {
     "SKILL.md",
-    ".instructions.md",
-    ".prompt.md",
+    "AGENTS.md",
     ".agent.md",
-    ".mdc",
-    ".md",
 }
 
 IGNORED_DIR_NAMES = {
@@ -336,6 +333,20 @@ def _kind_from_file(path: Path) -> TargetKind | None:
     return None
 
 
+def _kind_from_custom_path_file(path: Path) -> TargetKind | None:
+    name = path.name
+    if name == "SKILL.md":
+        return TargetKind.SKILL
+    if name.endswith(".agent.md"):
+        return TargetKind.AGENT
+    if name == "AGENTS.md":
+        return TargetKind.INSTRUCTION
+    # Claude/plugin agents commonly use agents/*.md filenames.
+    if path.suffix.lower() == ".md" and path.parent.name == "agents":
+        return TargetKind.AGENT
+    return None
+
+
 def _targets_from_custom_path(
     path: Path,
     platform: Platform,
@@ -347,13 +358,13 @@ def _targets_from_custom_path(
         candidates = [path]
     elif path.is_dir():
         for file_path in _iter_files(path, diagnostics, apply_ignores=False):
-            suffix = file_path.suffix.lower()
-            if file_path.name in SUPPORTED_SUFFIXES or suffix in {".md", ".mdc"}:
+            kind = _kind_from_custom_path_file(file_path)
+            if kind is not None:
                 candidates.append(file_path)
     targets: list[ScanTarget] = []
     seen: set[str] = set()
     for file_path in candidates:
-        kind = _kind_from_file(file_path)
+        kind = _kind_from_custom_path_file(file_path)
         if kind is None:
             continue
         try:
