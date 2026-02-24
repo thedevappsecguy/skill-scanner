@@ -63,17 +63,31 @@ def test_custom_root_skill_includes_referenced_script(tmp_path: Path) -> None:
 def test_custom_path_only_discovers_skill_and_agent_artifacts(tmp_path: Path) -> None:
     (tmp_path / "SKILL.md").write_text("skill body\n", encoding="utf-8")
     (tmp_path / "AGENTS.md").write_text("agent instructions\n", encoding="utf-8")
+    (tmp_path / ".claude" / "agents").mkdir(parents=True)
+    (tmp_path / ".claude" / "agents" / "reviewer.md").write_text("agent profile\n", encoding="utf-8")
+    (tmp_path / ".gemini" / "agents").mkdir(parents=True)
+    (tmp_path / ".gemini" / "agents" / "planner.md").write_text("agent profile\n", encoding="utf-8")
+    (tmp_path / ".opencode" / "agents").mkdir(parents=True)
+    (tmp_path / ".opencode" / "agents" / "triage.md").write_text("agent profile\n", encoding="utf-8")
+    (tmp_path / ".github" / "agents").mkdir(parents=True)
+    (tmp_path / ".github" / "agents" / "design.agent.md").write_text("agent profile\n", encoding="utf-8")
     (tmp_path / "agents").mkdir()
-    (tmp_path / "agents" / "reviewer.md").write_text("agent profile\n", encoding="utf-8")
-    (tmp_path / "design.agent.md").write_text("agent profile\n", encoding="utf-8")
+    (tmp_path / "agents" / "reviewer.md").write_text("generic markdown\n", encoding="utf-8")
     (tmp_path / "README.md").write_text("generic doc\n", encoding="utf-8")
     (tmp_path / "commands").mkdir()
     (tmp_path / "commands" / "deploy.md").write_text("command doc\n", encoding="utf-8")
 
     targets = discover_targets(path=str(tmp_path), platform=Platform.ALL)
-    discovered = {Path(target.entry_path).name for target in targets}
+    discovered = {Path(target.entry_path).relative_to(tmp_path).as_posix() for target in targets}
 
-    assert discovered == {"SKILL.md", "AGENTS.md", "reviewer.md", "design.agent.md"}
+    assert discovered == {
+        "SKILL.md",
+        "AGENTS.md",
+        ".claude/agents/reviewer.md",
+        ".gemini/agents/planner.md",
+        ".opencode/agents/triage.md",
+        ".github/agents/design.agent.md",
+    }
     assert all(target.kind.value in {"skill", "agent", "instruction"} for target in targets)
 
 
@@ -152,6 +166,36 @@ def test_user_patterns_discover_claude_flat_and_marketplace_skills(tmp_path: Pat
     )
 
 
+def test_user_patterns_discover_documented_agent_paths(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".claude/agents/reviewer.md").parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".claude/agents/reviewer.md").write_text("claude agent\n", encoding="utf-8")
+    (tmp_path / ".gemini/agents/planner.md").parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".gemini/agents/planner.md").write_text("gemini agent\n", encoding="utf-8")
+    (tmp_path / ".config/opencode/agents/triage.md").parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".config/opencode/agents/triage.md").write_text("opencode agent\n", encoding="utf-8")
+
+    targets = discover_targets(platform=Platform.ALL, scopes={Scope.USER})
+    discovered = {Path(target.entry_path).as_posix() for target in targets if target.kind.value == "agent"}
+
+    assert any(path.endswith("/.claude/agents/reviewer.md") for path in discovered)
+    assert any(path.endswith("/.gemini/agents/planner.md") for path in discovered)
+    assert any(path.endswith("/.config/opencode/agents/triage.md") for path in discovered)
+
+
+def test_user_patterns_discover_gemini_extension_skill_and_agents(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_skill(tmp_path / ".gemini/extensions/demo/skills/analyzer/SKILL.md")
+    (tmp_path / ".gemini/extensions/demo/agents/reviewer.md").parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".gemini/extensions/demo/agents/reviewer.md").write_text("review agent\n", encoding="utf-8")
+
+    targets = discover_targets(platform=Platform.GEMINI, scopes={Scope.USER})
+    discovered = {Path(target.entry_path).as_posix() for target in targets}
+
+    assert any(path.endswith("/.gemini/extensions/demo/skills/analyzer/SKILL.md") for path in discovered)
+    assert any(path.endswith("/.gemini/extensions/demo/agents/reviewer.md") for path in discovered)
+
+
 def test_platform_filter_returns_only_windsurf(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / ".git").mkdir()
     _write_skill(tmp_path / ".windsurf/skills/a/SKILL.md")
@@ -223,15 +267,15 @@ def test_discover_handles_repo_glob_errors_without_crashing(tmp_path: Path, monk
     assert any("InterruptedError" in warning for warning in warnings)
 
 
-def test_custom_path_handles_rglob_errors_without_crashing(tmp_path: Path, monkeypatch) -> None:
-    original_rglob = Path.rglob
+def test_custom_path_handles_glob_errors_without_crashing(tmp_path: Path, monkeypatch) -> None:
+    original_glob = Path.glob
 
-    def _broken_rglob(self: Path, pattern: str):
+    def _broken_glob(self: Path, pattern: str):
         if str(self) == str(tmp_path):
             raise PermissionError("access denied")
-        return original_rglob(self, pattern)
+        return original_glob(self, pattern)
 
-    monkeypatch.setattr(Path, "rglob", _broken_rglob)
+    monkeypatch.setattr(Path, "glob", _broken_glob)
 
     targets, warnings = discover_targets_with_diagnostics(path=str(tmp_path), platform=Platform.ALL)
     assert targets == []
