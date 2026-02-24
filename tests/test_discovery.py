@@ -60,6 +60,23 @@ def test_custom_root_skill_includes_referenced_script(tmp_path: Path) -> None:
     assert rel_paths == {"SKILL.md", "scripts/install.sh"}
 
 
+def test_custom_path_only_discovers_skill_and_agent_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "SKILL.md").write_text("skill body\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("agent instructions\n", encoding="utf-8")
+    (tmp_path / "agents").mkdir()
+    (tmp_path / "agents" / "reviewer.md").write_text("agent profile\n", encoding="utf-8")
+    (tmp_path / "design.agent.md").write_text("agent profile\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("generic doc\n", encoding="utf-8")
+    (tmp_path / "commands").mkdir()
+    (tmp_path / "commands" / "deploy.md").write_text("command doc\n", encoding="utf-8")
+
+    targets = discover_targets(path=str(tmp_path), platform=Platform.ALL)
+    discovered = {Path(target.entry_path).name for target in targets}
+
+    assert discovered == {"SKILL.md", "AGENTS.md", "reviewer.md", "design.agent.md"}
+    assert all(target.kind.value in {"skill", "agent", "instruction"} for target in targets)
+
+
 def _write_skill(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("---\nname: test\ndescription: demo\n---\nbody\n", encoding="utf-8")
@@ -95,6 +112,43 @@ def test_user_patterns_discover_windsurf_gemini_cline_opencode(tmp_path: Path, m
     platforms = {target.platform for target in targets if target.kind.value == "skill"}
     assert platforms.issuperset(
         {Platform.WINDSURF, Platform.GEMINI, Platform.CLINE, Platform.OPENCODE}
+    )
+
+
+def test_user_patterns_discover_flat_skill_layouts_without_subfolders(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_skill(tmp_path / ".agents/skills/SKILL.md")
+    _write_skill(tmp_path / ".codeium/windsurf/skills/SKILL.md")
+    _write_skill(tmp_path / ".gemini/skills/SKILL.md")
+    _write_skill(tmp_path / ".cline/skills/SKILL.md")
+    _write_skill(tmp_path / ".clinerules/skills/SKILL.md")
+    _write_skill(tmp_path / ".config/opencode/skills/SKILL.md")
+
+    targets = discover_targets(platform=Platform.ALL, scopes={Scope.USER})
+    discovered = {Path(target.entry_path).as_posix() for target in targets}
+
+    assert any(path.endswith("/.agents/skills/SKILL.md") for path in discovered)
+    assert any(path.endswith("/.codeium/windsurf/skills/SKILL.md") for path in discovered)
+    assert any(path.endswith("/.gemini/skills/SKILL.md") for path in discovered)
+    assert any(path.endswith("/.cline/skills/SKILL.md") for path in discovered)
+    assert any(path.endswith("/.clinerules/skills/SKILL.md") for path in discovered)
+    assert any(path.endswith("/.config/opencode/skills/SKILL.md") for path in discovered)
+
+
+def test_user_patterns_discover_claude_flat_and_marketplace_skills(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_skill(tmp_path / ".claude/skills/SKILL.md")
+    _write_skill(tmp_path / ".claude/plugins/marketplaces/default/plugins/example/skills/demo/SKILL.md")
+    _write_skill(tmp_path / ".claude/plugins/marketplaces/default/external_plugins/stripe/skills/pay/SKILL.md")
+
+    targets = discover_targets(platform=Platform.CLAUDE, scopes={Scope.USER})
+    discovered = {Path(target.entry_path).as_posix() for target in targets}
+
+    assert any(path.endswith("/.claude/skills/SKILL.md") for path in discovered)
+    assert any("/.claude/plugins/marketplaces/default/plugins/example/skills/demo/SKILL.md" in path for path in discovered)
+    assert any(
+        "/.claude/plugins/marketplaces/default/external_plugins/stripe/skills/pay/SKILL.md" in path
+        for path in discovered
     )
 
 
