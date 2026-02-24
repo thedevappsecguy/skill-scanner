@@ -45,11 +45,14 @@ Validated skill locations also include:
 - OpenCode: `.opencode/skills/*/SKILL.md`, `~/.config/opencode/skills/*/SKILL.md` (`.agents/skills/*/SKILL.md` and `.claude/skills/*/SKILL.md` when `--platform opencode`)
 - Claude marketplace/user variants: `.claude/skills/SKILL.md`, `.claude/skills/*/SKILL.md`, and
   `.claude/plugins/marketplaces/*/{plugins,external_plugins}/*/skills/*/SKILL.md`
+- Documented agent profile locations: `.claude/agents/*.md`, `.gemini/agents/*.md`,
+  `.gemini/extensions/*/agents/*.md`, `.opencode/agents/*.md`, `~/.config/opencode/agents/*.md`,
+  `.github/agents/**/*.agent.md`, and `agents/*.agent.md`
 - Skill discovery supports both flat and nested layouts: `skills/SKILL.md` and `skills/<name>/SKILL.md`
 
 Use `--path` to target a specific file or folder.
-`--path` discovery is deterministic and only emits skill/agent artifacts (`SKILL.md`, `AGENTS.md`,
-`*.agent.md`, and `agents/*.md`).
+`--path` discovery is deterministic and only emits files that match known discovery roots/patterns
+(plus a direct `SKILL.md` at the provided path root). It does not treat arbitrary `*.md` files as targets.
 
 Default discover behavior:
 

@@ -12,6 +12,7 @@ from skill_scanner.discovery.patterns import (
     REPO_PATTERNS,
     SYSTEM_PATTERNS,
     USER_PATTERNS,
+    DiscoveryPattern,
     matches_platform,
 )
 from skill_scanner.models.targets import Platform, ScanTarget, Scope, SkillFile, TargetKind
@@ -65,6 +66,12 @@ REPO_ROOT_MARKERS = {
     "Cargo.toml",
 }
 SKILL_COMPANION_DIRS = ("scripts", "assets", "references", "templates", "examples")
+CUSTOM_PATH_PATTERNS: tuple[DiscoveryPattern, ...] = (
+    DiscoveryPattern(Platform.GENERIC, Scope.REPO, "SKILL.md", TargetKind.SKILL),
+    *REPO_PATTERNS,
+    *USER_PATTERNS,
+    *EXTENSION_PATTERNS,
+)
 
 
 @dataclass
@@ -337,14 +344,99 @@ def _kind_from_custom_path_file(path: Path) -> TargetKind | None:
     name = path.name
     if name == "SKILL.md":
         return TargetKind.SKILL
+    if name.endswith(".instructions.md") or name in {
+        "AGENTS.md",
+        "CLAUDE.md",
+        "GEMINI.md",
+        "copilot-instructions.md",
+    }:
+        return TargetKind.INSTRUCTION
     if name.endswith(".agent.md"):
         return TargetKind.AGENT
-    if name == "AGENTS.md":
-        return TargetKind.INSTRUCTION
-    # Claude/plugin agents commonly use agents/*.md filenames.
-    if path.suffix.lower() == ".md" and path.parent.name == "agents":
+    if name.endswith(".prompt.md"):
+        return TargetKind.PROMPT
+    if path.suffix.lower() == ".md" and path.parent.name == "agents" and (
+        ".claude" in path.parts or ".opencode" in path.parts or ".gemini" in path.parts
+    ):
         return TargetKind.AGENT
+    if path.suffix.lower() == ".md" and path.parent.name == "commands" and ".claude" in path.parts:
+        return TargetKind.COMMAND
+    if name.endswith(".mdc") or name == ".cursorrules":
+        return TargetKind.RULE
     return None
+
+
+def _custom_path_globs(pattern: str) -> tuple[str, ...]:
+    if pattern.startswith("/"):
+        return ()
+    if pattern.startswith("**/"):
+        return (pattern,)
+    return (pattern, f"**/{pattern}")
+
+
+def _targets_from_custom_directory(
+    root: Path,
+    platform: Platform,
+    scope: Scope,
+    diagnostics: DiscoveryDiagnostics,
+) -> list[ScanTarget]:
+    discovered: dict[str, ScanTarget] = {}
+    for pattern in CUSTOM_PATH_PATTERNS:
+        if not matches_platform(platform, pattern.platform, pattern.explicit_platform_only):
+            continue
+        for glob_pattern in _custom_path_globs(pattern.glob):
+            for match in _iter_matches(root, glob_pattern, diagnostics):
+                try:
+                    if not match.is_file():
+                        continue
+                except OSError as error:
+                    _warn_oserror(diagnostics, f"failed reading file metadata '{match}'", error)
+                    continue
+                if _is_ignored_file(match, root):
+                    continue
+
+                try:
+                    entry = match.resolve()
+                except OSError as error:
+                    _warn_oserror(diagnostics, f"failed resolving discovered match '{match}'", error)
+                    continue
+
+                if pattern.kind == TargetKind.EXTENSION:
+                    for extension_target in _extension_targets(entry, diagnostics):
+                        target = ScanTarget(
+                            id=_target_id(
+                                Path(extension_target.entry_path),
+                                extension_target.kind,
+                                extension_target.platform,
+                                scope,
+                            ),
+                            kind=extension_target.kind,
+                            platform=extension_target.platform,
+                            scope=scope,
+                            entry_path=extension_target.entry_path,
+                            root_dir=extension_target.root_dir,
+                            files=extension_target.files,
+                        )
+                        discovered[target.entry_path] = target
+                    continue
+
+                files = (
+                    _collect_skill_files(entry, diagnostics)
+                    if pattern.kind == TargetKind.SKILL
+                    else _single_file(entry, root, diagnostics)
+                )
+                target = ScanTarget(
+                    id=_target_id(entry, pattern.kind, pattern.platform, scope),
+                    kind=pattern.kind,
+                    platform=pattern.platform,
+                    scope=scope,
+                    entry_path=str(entry),
+                    root_dir=str(entry.parent),
+                    files=files,
+                )
+                discovered[str(entry)] = target
+
+    return sorted(discovered.values(), key=lambda item: item.entry_path)
 
 
 def _targets_from_custom_path(
@@ -353,45 +445,37 @@ def _targets_from_custom_path(
     scope: Scope,
     diagnostics: DiscoveryDiagnostics,
 ) -> list[ScanTarget]:
-    candidates: list[Path] = []
     if path.is_file():
-        candidates = [path]
-    elif path.is_dir():
-        for file_path in _iter_files(path, diagnostics, apply_ignores=False):
-            kind = _kind_from_custom_path_file(file_path)
-            if kind is not None:
-                candidates.append(file_path)
-    targets: list[ScanTarget] = []
-    seen: set[str] = set()
-    for file_path in candidates:
-        kind = _kind_from_custom_path_file(file_path)
+        kind = _kind_from_custom_path_file(path)
         if kind is None:
-            continue
+            return []
         try:
-            resolved_path = file_path.resolve()
+            resolved_path = path.resolve()
         except OSError as error:
-            _warn_oserror(diagnostics, f"failed resolving custom-path file '{file_path}'", error)
-            continue
-        resolved = str(resolved_path)
-        if resolved in seen:
-            continue
-        seen.add(resolved)
+            _warn_oserror(diagnostics, f"failed resolving custom-path file '{path}'", error)
+            return []
+        root = path.parent
         files = (
-            _collect_skill_files(file_path, diagnostics)
+            _collect_skill_files(path, diagnostics)
             if kind == TargetKind.SKILL
-            else _single_file(file_path, path, diagnostics)
+            else _single_file(path, root, diagnostics)
         )
-        target = ScanTarget(
-            id=_target_id(file_path, kind, platform, scope),
-            kind=kind,
-            platform=platform,
-            scope=scope,
-            entry_path=resolved,
-            root_dir=str(resolved_path.parent),
-            files=files,
-        )
-        targets.append(target)
-    return targets
+        return [
+            ScanTarget(
+                id=_target_id(path, kind, platform, scope),
+                kind=kind,
+                platform=platform,
+                scope=scope,
+                entry_path=str(resolved_path),
+                root_dir=str(resolved_path.parent),
+                files=files,
+            )
+        ]
+
+    if not path.is_dir():
+        return []
+
+    return _targets_from_custom_directory(path, platform, scope, diagnostics)
 
 
 def _extension_targets(package_json: Path, diagnostics: DiscoveryDiagnostics) -> list[ScanTarget]:
