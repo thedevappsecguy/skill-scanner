@@ -11,6 +11,7 @@ class DiscoveryPattern:
     scope: Scope
     glob: str
     kind: TargetKind
+    explicit_platform_only: bool = False
 
 
 REPO_PATTERNS: tuple[DiscoveryPattern, ...] = (
@@ -29,8 +30,30 @@ REPO_PATTERNS: tuple[DiscoveryPattern, ...] = (
     DiscoveryPattern(Platform.CURSOR, Scope.REPO, ".cursor/skills/*/SKILL.md", TargetKind.SKILL),
     DiscoveryPattern(Platform.WINDSURF, Scope.REPO, ".windsurf/skills/*/SKILL.md", TargetKind.SKILL),
     DiscoveryPattern(Platform.GEMINI, Scope.REPO, ".gemini/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(
+        Platform.GEMINI,
+        Scope.REPO,
+        ".agents/skills/*/SKILL.md",
+        TargetKind.SKILL,
+        explicit_platform_only=True,
+    ),
     DiscoveryPattern(Platform.CLINE, Scope.REPO, ".cline/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(Platform.CLINE, Scope.REPO, ".clinerules/skills/*/SKILL.md", TargetKind.SKILL),
     DiscoveryPattern(Platform.OPENCODE, Scope.REPO, ".opencode/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(
+        Platform.OPENCODE,
+        Scope.REPO,
+        ".agents/skills/*/SKILL.md",
+        TargetKind.SKILL,
+        explicit_platform_only=True,
+    ),
+    DiscoveryPattern(
+        Platform.OPENCODE,
+        Scope.REPO,
+        ".claude/skills/*/SKILL.md",
+        TargetKind.SKILL,
+        explicit_platform_only=True,
+    ),
     DiscoveryPattern(Platform.VSCODE, Scope.REPO, ".github/prompts/**/*.prompt.md", TargetKind.PROMPT),
     DiscoveryPattern(Platform.VSCODE, Scope.REPO, ".github/agents/**/*.agent.md", TargetKind.AGENT),
 )
@@ -45,8 +68,30 @@ USER_PATTERNS: tuple[DiscoveryPattern, ...] = (
     DiscoveryPattern(Platform.COPILOT, Scope.USER, ".copilot/skills/*/SKILL.md", TargetKind.SKILL),
     DiscoveryPattern(Platform.WINDSURF, Scope.USER, ".codeium/windsurf/skills/*/SKILL.md", TargetKind.SKILL),
     DiscoveryPattern(Platform.GEMINI, Scope.USER, ".gemini/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(
+        Platform.GEMINI,
+        Scope.USER,
+        ".agents/skills/*/SKILL.md",
+        TargetKind.SKILL,
+        explicit_platform_only=True,
+    ),
     DiscoveryPattern(Platform.CLINE, Scope.USER, ".cline/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(Platform.CLINE, Scope.USER, ".clinerules/skills/*/SKILL.md", TargetKind.SKILL),
     DiscoveryPattern(Platform.OPENCODE, Scope.USER, ".config/opencode/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(
+        Platform.OPENCODE,
+        Scope.USER,
+        ".agents/skills/*/SKILL.md",
+        TargetKind.SKILL,
+        explicit_platform_only=True,
+    ),
+    DiscoveryPattern(
+        Platform.OPENCODE,
+        Scope.USER,
+        ".claude/skills/*/SKILL.md",
+        TargetKind.SKILL,
+        explicit_platform_only=True,
+    ),
 )
 
 SYSTEM_PATTERNS: tuple[DiscoveryPattern, ...] = (
@@ -58,9 +103,9 @@ EXTENSION_PATTERNS: tuple[DiscoveryPattern, ...] = (
 )
 
 
-def matches_platform(requested: Platform, candidate: Platform) -> bool:
+def matches_platform(requested: Platform, candidate: Platform, explicit_platform_only: bool = False) -> bool:
     if requested == Platform.ALL:
-        return True
+        return not explicit_platform_only
     if requested == Platform.GENERIC:
         return True
     return requested == candidate

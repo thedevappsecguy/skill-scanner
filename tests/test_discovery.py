@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skill_scanner.discovery.finder import discover_targets
+import skill_scanner.discovery.finder as finder_module
+from skill_scanner.discovery.finder import discover_targets, discover_targets_with_diagnostics
 from skill_scanner.models.targets import Platform, Scope
 
 
@@ -86,6 +87,7 @@ def test_user_patterns_discover_windsurf_gemini_cline_opencode(tmp_path: Path, m
     _write_skill(tmp_path / ".codeium/windsurf/skills/a/SKILL.md")
     _write_skill(tmp_path / ".gemini/skills/b/SKILL.md")
     _write_skill(tmp_path / ".cline/skills/c/SKILL.md")
+    _write_skill(tmp_path / ".clinerules/skills/c/SKILL.md")
     _write_skill(tmp_path / ".config/opencode/skills/d/SKILL.md")
 
     targets = discover_targets(platform=Platform.ALL, scopes={Scope.USER})
@@ -106,6 +108,107 @@ def test_platform_filter_returns_only_windsurf(tmp_path: Path, monkeypatch) -> N
 
     assert targets
     assert all(target.platform == Platform.WINDSURF for target in targets)
+
+
+def test_cline_clinerules_alias_is_discovered_in_repo_scope(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / ".git").mkdir()
+    _write_skill(tmp_path / ".clinerules/skills/alias/SKILL.md")
+
+    monkeypatch.chdir(tmp_path)
+    targets = discover_targets(platform=Platform.CLINE, scopes={Scope.REPO})
+
+    assert targets
+    assert any("/.clinerules/skills/alias/SKILL.md" in target.entry_path for target in targets)
+
+
+def test_shared_paths_are_platform_specific(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / ".git").mkdir()
+    _write_skill(tmp_path / ".agents/skills/shared/SKILL.md")
+    _write_skill(tmp_path / ".claude/skills/legacy/SKILL.md")
+
+    monkeypatch.chdir(tmp_path)
+
+    all_targets = discover_targets(platform=Platform.ALL, scopes={Scope.REPO})
+    gemini_targets = discover_targets(platform=Platform.GEMINI, scopes={Scope.REPO})
+    opencode_targets = discover_targets(platform=Platform.OPENCODE, scopes={Scope.REPO})
+
+    all_agents_platforms = {
+        target.platform for target in all_targets if "/.agents/skills/shared/SKILL.md" in target.entry_path
+    }
+    gemini_agents_platforms = {
+        target.platform for target in gemini_targets if "/.agents/skills/shared/SKILL.md" in target.entry_path
+    }
+    opencode_agents_platforms = {
+        target.platform for target in opencode_targets if "/.agents/skills/shared/SKILL.md" in target.entry_path
+    }
+    opencode_claude_platforms = {
+        target.platform for target in opencode_targets if "/.claude/skills/legacy/SKILL.md" in target.entry_path
+    }
+
+    assert all_agents_platforms == {Platform.CODEX}
+    assert gemini_agents_platforms == {Platform.GEMINI}
+    assert opencode_agents_platforms == {Platform.OPENCODE}
+    assert opencode_claude_platforms == {Platform.OPENCODE}
+
+
+def test_discover_handles_repo_glob_errors_without_crashing(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / ".git").mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    original_glob = Path.glob
+
+    def _broken_glob(self: Path, pattern: str):
+        if str(self) == str(tmp_path):
+            raise InterruptedError("scandir interrupted")
+        return original_glob(self, pattern)
+
+    monkeypatch.setattr(Path, "glob", _broken_glob)
+
+    targets, warnings = discover_targets_with_diagnostics(platform=Platform.ALL, scopes={Scope.REPO})
+    assert targets == []
+    assert any("InterruptedError" in warning for warning in warnings)
+
+
+def test_custom_path_handles_rglob_errors_without_crashing(tmp_path: Path, monkeypatch) -> None:
+    original_rglob = Path.rglob
+
+    def _broken_rglob(self: Path, pattern: str):
+        if str(self) == str(tmp_path):
+            raise PermissionError("access denied")
+        return original_rglob(self, pattern)
+
+    monkeypatch.setattr(Path, "rglob", _broken_rglob)
+
+    targets, warnings = discover_targets_with_diagnostics(path=str(tmp_path), platform=Platform.ALL)
+    assert targets == []
+    assert any("PermissionError" in warning for warning in warnings)
+
+
+def test_default_discovery_skips_repo_scope_outside_git_repo(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    _write_skill(home / ".codex/skills/demo/SKILL.md")
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    monkeypatch.chdir(work_dir)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(finder_module, "SYSTEM_PATTERNS", ())
+    monkeypatch.setattr(finder_module, "EXTENSION_PATTERNS", ())
+
+    targets, warnings = discover_targets_with_diagnostics(platform=Platform.ALL)
+
+    assert any(target.scope == Scope.USER for target in targets)
+    assert all(target.scope != Scope.REPO for target in targets)
+    assert any("Skipping repo scope" in warning for warning in warnings)
+
+
+def test_explicit_repo_scope_outside_repo_returns_warning(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    targets, warnings = discover_targets_with_diagnostics(platform=Platform.ALL, scopes={Scope.REPO})
+
+    assert targets == []
+    assert any("Skipping repo scope" in warning for warning in warnings)
 
 
 def test_continue_and_amazonq_paths_are_not_discovered(tmp_path: Path, monkeypatch) -> None:

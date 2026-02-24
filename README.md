@@ -40,17 +40,29 @@ By default, `discover` and `scan` detect markdown-based skill/instruction artifa
 Validated skill locations also include:
 
 - Windsurf: `.windsurf/skills/*/SKILL.md`, `~/.codeium/windsurf/skills/*/SKILL.md`
-- Gemini CLI: `.gemini/skills/*/SKILL.md`, `~/.gemini/skills/*/SKILL.md`
-- Cline: `.cline/skills/*/SKILL.md`, `~/.cline/skills/*/SKILL.md`
-- OpenCode: `.opencode/skills/*/SKILL.md`, `~/.config/opencode/skills/*/SKILL.md`
+- Gemini CLI: `.gemini/skills/*/SKILL.md`, `~/.gemini/skills/*/SKILL.md` (`.agents/skills/*/SKILL.md` when `--platform gemini`)
+- Cline: `.cline/skills/*/SKILL.md`, `.clinerules/skills/*/SKILL.md`, `~/.cline/skills/*/SKILL.md`, `~/.clinerules/skills/*/SKILL.md`
+- OpenCode: `.opencode/skills/*/SKILL.md`, `~/.config/opencode/skills/*/SKILL.md` (`.agents/skills/*/SKILL.md` and `.claude/skills/*/SKILL.md` when `--platform opencode`)
 
 Use `--path` to target a specific file or folder.
+
+Default discover behavior:
+
+- `discover` attempts all scopes (`repo`, `user`, `system`, `extension`).
+- `repo` scope is only active when your current directory is inside a git repository.
+- Filesystem traversal errors are non-fatal; discovery returns partial results. Use `--verbose` to inspect warnings.
 
 ## Quick start
 
 ```bash
 # See targets
 uv run skill-scanner discover --format json
+
+# Discover only user scope
+uv run skill-scanner discover --scope user
+
+# Show detailed discovery warnings
+uv run skill-scanner discover --verbose
 
 # Verify key/model configuration
 uv run skill-scanner doctor
@@ -123,6 +135,12 @@ uv run skill-scanner scan --verbose --format summary
 # List discovered targets without running analyzers
 uv run skill-scanner scan --list-targets
 
+# Discover targets from user scope only
+uv run skill-scanner discover --scope user --format table
+
+# Discover with detailed traversal diagnostics
+uv run skill-scanner discover --verbose --format table
+
 # Scan only selected discovered targets (repeat --target)
 uv run skill-scanner scan --target /absolute/path/to/SKILL.md --target /absolute/path/to/AGENTS.md --format summary
 
@@ -137,6 +155,21 @@ uv run skill-scanner doctor --check --verbose
 ```
 
 `--list-targets` can be used without API keys because it only runs discovery and exits.
+
+## Discovery troubleshooting (macOS/Windows)
+
+```bash
+# macOS/Windows: default discover should complete without crashing
+uv run skill-scanner discover --format table
+
+# Scoped check: verify user skill paths only
+uv run skill-scanner discover --scope user --format table
+```
+
+Windows known-path sanity check:
+- create `%USERPROFILE%\\.clinerules\\skills\\demo\\SKILL.md`
+- run `uv run skill-scanner discover --platform cline --scope user --format table`
+- confirm the demo skill appears in output
 
 ## Exit behavior
 

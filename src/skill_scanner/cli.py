@@ -11,7 +11,7 @@ from rich.console import Console
 from skill_scanner import __version__
 from skill_scanner.analyzers.pipeline import run_scan
 from skill_scanner.config import load_settings
-from skill_scanner.discovery.finder import discover_targets
+from skill_scanner.discovery.finder import discover_targets, discover_targets_with_diagnostics
 from skill_scanner.models.findings import Severity
 from skill_scanner.models.reports import ScanReport, SkillReport
 from skill_scanner.models.targets import Platform, ScanTarget, Scope
@@ -46,12 +46,24 @@ def callback(
 def discover(
     path: str | None = typer.Option(None, help="Custom file or directory path to scan."),
     platform: Platform = typer.Option(Platform.ALL, help="Platform to target."),
+    scope: list[Scope] = typer.Option([], help="Scope filter, repeat for multiple."),
     format: str = typer.Option("table", help="table|json"),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logs."),
 ) -> None:
-    targets = discover_targets(path=path, platform=platform)
+    _configure_logging(verbose)
+    selected_scopes = set(scope) if scope else None
+    targets, warnings = discover_targets_with_diagnostics(path=path, platform=platform, scopes=selected_scopes)
     if format == "json":
         console.print_json(data=[item.model_dump() for item in targets])
         return
+
+    if warnings:
+        if verbose:
+            console.print(f"Discovery warnings: {len(warnings)}")
+            for warning in warnings:
+                console.print(f"- {warning}")
+        else:
+            console.print(f"Discovery warnings: {len(warnings)} (rerun with --verbose for details)")
 
     console.print(f"Discovered {len(targets)} targets")
     for item in targets:
