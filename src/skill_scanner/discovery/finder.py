@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from skill_scanner.discovery.patterns import (
@@ -13,6 +15,8 @@ from skill_scanner.discovery.patterns import (
     matches_platform,
 )
 from skill_scanner.models.targets import Platform, ScanTarget, Scope, SkillFile, TargetKind
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_SUFFIXES = {
     "SKILL.md",
@@ -66,18 +70,59 @@ REPO_ROOT_MARKERS = {
 SKILL_COMPANION_DIRS = ("scripts", "assets", "references", "templates", "examples")
 
 
-def _repo_root(start: Path) -> Path:
-    current = start.resolve()
+@dataclass
+class DiscoveryDiagnostics:
+    warnings: list[str] = field(default_factory=list)
+
+    def warn(self, message: str) -> None:
+        self.warnings.append(message)
+        logger.info("discovery warning: %s", message)
+
+
+def _repo_root(start: Path) -> Path | None:
+    try:
+        current = start.resolve()
+    except OSError:
+        return None
     for candidate in [current, *current.parents]:
         if (candidate / ".git").exists():
             return candidate
-    return current
+    return None
 
 
-def _iter_matches(root: Path, pattern: str) -> list[Path]:
+def _warn_oserror(diagnostics: DiscoveryDiagnostics, context: str, error: OSError) -> None:
+    diagnostics.warn(f"{context}: {error.__class__.__name__}: {error}")
+
+
+def _iter_matches(root: Path, pattern: str, diagnostics: DiscoveryDiagnostics) -> list[Path]:
+    base = Path("/") if pattern.startswith("/") else root
+    glob_pattern = pattern[1:] if pattern.startswith("/") else pattern
+    matches: list[Path] = []
     if pattern.startswith("/"):
-        return [p for p in Path("/").glob(pattern[1:]) if p.exists()]
-    return [p for p in root.glob(pattern) if p.exists()]
+        context = f"failed scanning absolute pattern '{pattern}'"
+    else:
+        context = f"failed scanning pattern '{pattern}' under '{root}'"
+
+    try:
+        iterator = base.glob(glob_pattern)
+    except OSError as error:
+        _warn_oserror(diagnostics, context, error)
+        return matches
+
+    while True:
+        try:
+            path = next(iterator)
+        except StopIteration:
+            break
+        except OSError as error:
+            _warn_oserror(diagnostics, context, error)
+            break
+        try:
+            if path.exists():
+                matches.append(path)
+        except OSError as error:
+            _warn_oserror(diagnostics, f"failed checking discovered path '{path}'", error)
+    return matches
 
 
 def _is_ignored_file(path: Path, root: Path) -> bool:
@@ -93,22 +138,57 @@ def _is_ignored_file(path: Path, root: Path) -> bool:
     return any(name.endswith(suffix) for suffix in IGNORED_FILE_SUFFIXES)
 
 
-def _iter_files(root: Path) -> list[Path]:
+def _iter_files(root: Path, diagnostics: DiscoveryDiagnostics, *, apply_ignores: bool = True) -> list[Path]:
     files: list[Path] = []
-    for file_path in sorted(root.rglob("*")):
-        if not file_path.is_file():
+    try:
+        iterator = root.rglob("*")
+    except OSError as error:
+        _warn_oserror(diagnostics, f"failed walking files under '{root}'", error)
+        return files
+
+    while True:
+        try:
+            file_path = next(iterator)
+        except StopIteration:
+            break
+        except OSError as error:
+            _warn_oserror(diagnostics, f"failed walking files under '{root}'", error)
+            break
+        try:
+            if not file_path.is_file():
+                continue
+        except OSError as error:
+            _warn_oserror(diagnostics, f"failed reading file metadata '{file_path}'", error)
             continue
-        if _is_ignored_file(file_path, root):
+        if apply_ignores and _is_ignored_file(file_path, root):
             continue
         files.append(file_path)
-    return files
+
+    return sorted(files, key=lambda item: str(item))
 
 
-def _to_skill_file(path: Path, root: Path) -> SkillFile:
+def _to_skill_file(path: Path, root: Path, diagnostics: DiscoveryDiagnostics) -> SkillFile | None:
+    try:
+        resolved = path.resolve()
+    except OSError as error:
+        _warn_oserror(diagnostics, f"failed resolving file '{path}'", error)
+        return None
+
+    try:
+        relative = str(resolved.relative_to(root))
+    except ValueError:
+        relative = resolved.name
+
+    try:
+        size = resolved.stat().st_size
+    except OSError as error:
+        _warn_oserror(diagnostics, f"failed reading file size '{resolved}'", error)
+        return None
+
     return SkillFile(
-        path=str(path.resolve()),
-        relative_path=str(path.relative_to(root)),
-        size=path.stat().st_size,
+        path=str(resolved),
+        relative_path=relative,
+        size=size,
     )
 
 
@@ -116,7 +196,7 @@ def _looks_like_repo_root(path: Path) -> bool:
     return any((path / marker).exists() for marker in REPO_ROOT_MARKERS)
 
 
-def _extract_local_references(skill_md: Path, root: Path) -> set[Path]:
+def _extract_local_references(skill_md: Path, root: Path, diagnostics: DiscoveryDiagnostics) -> set[Path]:
     try:
         text = skill_md.read_text(encoding="utf-8", errors="ignore")
     except Exception:
@@ -126,6 +206,12 @@ def _extract_local_references(skill_md: Path, root: Path) -> set[Path]:
     candidates.update(match.strip() for match in SKILL_REFERENCE_LINK_RE.findall(text))
     candidates.update(match.strip() for match in SKILL_REFERENCE_CODE_RE.findall(text))
 
+    try:
+        root_resolved = root.resolve()
+    except OSError as error:
+        _warn_oserror(diagnostics, f"failed resolving skill root '{root}'", error)
+        return set()
+
     references: set[Path] = set()
     for candidate in candidates:
         value = candidate.strip().strip("<>").strip("'").strip('"')
@@ -134,57 +220,102 @@ def _extract_local_references(skill_md: Path, root: Path) -> set[Path]:
         if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", value):
             continue
         value = value.split("#", 1)[0].split("?", 1)[0]
-        resolved = (root / value).resolve()
+        try:
+            resolved = (root / value).resolve()
+        except OSError as error:
+            _warn_oserror(diagnostics, f"failed resolving local reference '{value}' in '{skill_md}'", error)
+            continue
         if not resolved.exists():
             continue
         try:
-            resolved.relative_to(root.resolve())
+            resolved.relative_to(root_resolved)
         except ValueError:
             continue
         references.add(resolved)
     return references
 
 
-def _collect_skill_files(skill_md: Path) -> list[SkillFile]:
+def _collect_skill_files(skill_md: Path, diagnostics: DiscoveryDiagnostics) -> list[SkillFile]:
     root = skill_md.parent
-    root_resolved = root.resolve()
+    try:
+        root_resolved = root.resolve()
+    except OSError as error:
+        _warn_oserror(diagnostics, f"failed resolving skill root '{root}'", error)
+        return []
 
     if not _looks_like_repo_root(root_resolved):
-        return [_to_skill_file(file_path, root_resolved) for file_path in _iter_files(root_resolved)]
+        files: list[SkillFile] = []
+        for file_path in _iter_files(root_resolved, diagnostics):
+            skill_file = _to_skill_file(file_path, root_resolved, diagnostics)
+            if skill_file is not None:
+                files.append(skill_file)
+        return files
 
-    selected: set[Path] = {skill_md.resolve()}
+    selected: set[Path] = set()
+    try:
+        selected.add(skill_md.resolve())
+    except OSError as error:
+        _warn_oserror(diagnostics, f"failed resolving skill file '{skill_md}'", error)
+        return []
 
     for dirname in SKILL_COMPANION_DIRS:
         candidate_dir = root_resolved / dirname
         if candidate_dir.exists() and candidate_dir.is_dir():
-            selected.update(_iter_files(candidate_dir))
+            selected.update(_iter_files(candidate_dir, diagnostics))
 
-    for reference in _extract_local_references(skill_md, root_resolved):
+    for reference in _extract_local_references(skill_md, root_resolved, diagnostics):
         if reference.is_file() and not _is_ignored_file(reference, root_resolved):
             selected.add(reference)
             continue
         if reference.is_dir():
-            selected.update(_iter_files(reference))
+            selected.update(_iter_files(reference, diagnostics))
 
-    return [_to_skill_file(file_path, root_resolved) for file_path in sorted(selected)]
+    selected_files: list[SkillFile] = []
+    for file_path in sorted(selected, key=lambda item: str(item)):
+        skill_file = _to_skill_file(file_path, root_resolved, diagnostics)
+        if skill_file is not None:
+            selected_files.append(skill_file)
+    return selected_files
 
 
-def _single_file(file_path: Path, root: Path) -> list[SkillFile]:
+def _single_file(file_path: Path, root: Path, diagnostics: DiscoveryDiagnostics) -> list[SkillFile]:
     try:
-        relative = str(file_path.resolve().relative_to(root.resolve()))
+        resolved_file = file_path.resolve()
+    except OSError as error:
+        _warn_oserror(diagnostics, f"failed resolving file '{file_path}'", error)
+        return []
+
+    try:
+        resolved_root = root.resolve()
+    except OSError:
+        resolved_root = root
+
+    try:
+        relative = str(resolved_file.relative_to(resolved_root))
     except ValueError:
-        relative = file_path.name
+        relative = resolved_file.name
+
+    try:
+        size = resolved_file.stat().st_size
+    except OSError as error:
+        _warn_oserror(diagnostics, f"failed reading file size '{resolved_file}'", error)
+        return []
+
     return [
         SkillFile(
-            path=str(file_path.resolve()),
+            path=str(resolved_file),
             relative_path=relative,
-            size=file_path.stat().st_size,
+            size=size,
         )
     ]
 
 
 def _target_id(path: Path, kind: TargetKind, platform: Platform, scope: Scope) -> str:
-    value = f"{path.resolve()}:{kind.value}:{platform.value}:{scope.value}"
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path
+    value = f"{resolved}:{kind.value}:{platform.value}:{scope.value}"
     return hashlib.sha1(value.encode("utf-8")).hexdigest()[:12]
 
 
@@ -205,14 +336,17 @@ def _kind_from_file(path: Path) -> TargetKind | None:
     return None
 
 
-def _targets_from_custom_path(path: Path, platform: Platform, scope: Scope) -> list[ScanTarget]:
+def _targets_from_custom_path(
+    path: Path,
+    platform: Platform,
+    scope: Scope,
+    diagnostics: DiscoveryDiagnostics,
+) -> list[ScanTarget]:
     candidates: list[Path] = []
     if path.is_file():
         candidates = [path]
     elif path.is_dir():
-        for file_path in path.rglob("*"):
-            if not file_path.is_file():
-                continue
+        for file_path in _iter_files(path, diagnostics, apply_ignores=False):
             suffix = file_path.suffix.lower()
             if file_path.name in SUPPORTED_SUFFIXES or suffix in {".md", ".mdc"}:
                 candidates.append(file_path)
@@ -222,25 +356,34 @@ def _targets_from_custom_path(path: Path, platform: Platform, scope: Scope) -> l
         kind = _kind_from_file(file_path)
         if kind is None:
             continue
-        resolved = str(file_path.resolve())
+        try:
+            resolved_path = file_path.resolve()
+        except OSError as error:
+            _warn_oserror(diagnostics, f"failed resolving custom-path file '{file_path}'", error)
+            continue
+        resolved = str(resolved_path)
         if resolved in seen:
             continue
         seen.add(resolved)
-        files = _collect_skill_files(file_path) if kind == TargetKind.SKILL else _single_file(file_path, path)
+        files = (
+            _collect_skill_files(file_path, diagnostics)
+            if kind == TargetKind.SKILL
+            else _single_file(file_path, path, diagnostics)
+        )
         target = ScanTarget(
             id=_target_id(file_path, kind, platform, scope),
             kind=kind,
             platform=platform,
             scope=scope,
             entry_path=resolved,
-            root_dir=str(file_path.parent.resolve()),
+            root_dir=str(resolved_path.parent),
             files=files,
         )
         targets.append(target)
     return targets
 
 
-def _extension_targets(package_json: Path) -> list[ScanTarget]:
+def _extension_targets(package_json: Path, diagnostics: DiscoveryDiagnostics) -> list[ScanTarget]:
     targets: list[ScanTarget] = []
     try:
         payload = json.loads(package_json.read_text(encoding="utf-8"))
@@ -255,7 +398,15 @@ def _extension_targets(package_json: Path) -> list[ScanTarget]:
         raw_path = skill.get("path")
         if not isinstance(raw_path, str):
             continue
-        skill_md = (package_json.parent / raw_path / "SKILL.md").resolve()
+        try:
+            skill_md = (package_json.parent / raw_path / "SKILL.md").resolve()
+        except OSError as error:
+            _warn_oserror(
+                diagnostics,
+                f"failed resolving extension skill path '{raw_path}' from '{package_json}'",
+                error,
+            )
+            continue
         if not skill_md.exists():
             continue
         targets.append(
@@ -266,53 +417,83 @@ def _extension_targets(package_json: Path) -> list[ScanTarget]:
                 scope=Scope.EXTENSION,
                 entry_path=str(skill_md),
                 root_dir=str(skill_md.parent),
-                files=_collect_skill_files(skill_md),
+                files=_collect_skill_files(skill_md, diagnostics),
             )
         )
     return targets
 
 
-def discover_targets(
+def discover_targets_with_diagnostics(
     path: str | None = None,
     platform: Platform = Platform.ALL,
     scopes: set[Scope] | None = None,
-) -> list[ScanTarget]:
+) -> tuple[list[ScanTarget], list[str]]:
+    diagnostics = DiscoveryDiagnostics()
     selected_scopes = scopes or {Scope.REPO, Scope.USER, Scope.SYSTEM, Scope.EXTENSION}
     cwd = Path.cwd()
     repo_root = _repo_root(cwd)
+    repo_scope_enabled = Scope.REPO in selected_scopes and repo_root is not None
+
+    if Scope.REPO in selected_scopes and repo_root is None:
+        diagnostics.warn(
+            f"Skipping repo scope because '{cwd}' is not inside a git repository. "
+            "Use --path or run from a repository root."
+        )
 
     if path:
-        custom_path = Path(path).expanduser().resolve()
+        try:
+            custom_path = Path(path).expanduser().resolve()
+        except OSError as error:
+            _warn_oserror(diagnostics, f"failed resolving custom path '{path}'", error)
+            return ([], diagnostics.warnings)
         if not custom_path.exists():
-            return []
-        return _targets_from_custom_path(custom_path, platform, Scope.REPO)
+            return ([], diagnostics.warnings)
+        targets = _targets_from_custom_path(custom_path, platform, Scope.REPO, diagnostics)
+        return (targets, diagnostics.warnings)
 
     discovered: dict[str, ScanTarget] = {}
 
-    for pattern in REPO_PATTERNS:
-        if Scope.REPO not in selected_scopes or not matches_platform(platform, pattern.platform):
-            continue
-        for match in _iter_matches(repo_root, pattern.glob):
-            entry = match.resolve()
-            files = _collect_skill_files(entry) if pattern.kind == TargetKind.SKILL else _single_file(entry, repo_root)
-            target = ScanTarget(
-                id=_target_id(entry, pattern.kind, pattern.platform, Scope.REPO),
-                kind=pattern.kind,
-                platform=pattern.platform,
-                scope=Scope.REPO,
-                entry_path=str(entry),
-                root_dir=str(entry.parent),
-                files=files,
-            )
-            discovered[str(entry)] = target
+    if repo_scope_enabled and repo_root is not None:
+        for pattern in REPO_PATTERNS:
+            if not matches_platform(platform, pattern.platform, pattern.explicit_platform_only):
+                continue
+            for match in _iter_matches(repo_root, pattern.glob, diagnostics):
+                try:
+                    entry = match.resolve()
+                except OSError as error:
+                    _warn_oserror(diagnostics, f"failed resolving discovered match '{match}'", error)
+                    continue
+                files = (
+                    _collect_skill_files(entry, diagnostics)
+                    if pattern.kind == TargetKind.SKILL
+                    else _single_file(entry, repo_root, diagnostics)
+                )
+                target = ScanTarget(
+                    id=_target_id(entry, pattern.kind, pattern.platform, Scope.REPO),
+                    kind=pattern.kind,
+                    platform=pattern.platform,
+                    scope=Scope.REPO,
+                    entry_path=str(entry),
+                    root_dir=str(entry.parent),
+                    files=files,
+                )
+                discovered[str(entry)] = target
 
     home = Path.home()
     for pattern in USER_PATTERNS:
-        if Scope.USER not in selected_scopes or not matches_platform(platform, pattern.platform):
+        if Scope.USER not in selected_scopes or not matches_platform(platform, pattern.platform, pattern.explicit_platform_only):
             continue
-        for match in _iter_matches(home, pattern.glob):
-            entry = match.resolve()
-            files = _collect_skill_files(entry) if pattern.kind == TargetKind.SKILL else _single_file(entry, home)
+        for match in _iter_matches(home, pattern.glob, diagnostics):
+            try:
+                entry = match.resolve()
+            except OSError as error:
+                _warn_oserror(diagnostics, f"failed resolving discovered match '{match}'", error)
+                continue
+            files = (
+                _collect_skill_files(entry, diagnostics)
+                if pattern.kind == TargetKind.SKILL
+                else _single_file(entry, home, diagnostics)
+            )
             target = ScanTarget(
                 id=_target_id(entry, pattern.kind, pattern.platform, Scope.USER),
                 kind=pattern.kind,
@@ -325,10 +506,14 @@ def discover_targets(
             discovered[str(entry)] = target
 
     for pattern in SYSTEM_PATTERNS:
-        if Scope.SYSTEM not in selected_scopes or not matches_platform(platform, pattern.platform):
+        if Scope.SYSTEM not in selected_scopes or not matches_platform(platform, pattern.platform, pattern.explicit_platform_only):
             continue
-        for match in _iter_matches(Path("/"), pattern.glob):
-            entry = match.resolve()
+        for match in _iter_matches(Path("/"), pattern.glob, diagnostics):
+            try:
+                entry = match.resolve()
+            except OSError as error:
+                _warn_oserror(diagnostics, f"failed resolving discovered match '{match}'", error)
+                continue
             target = ScanTarget(
                 id=_target_id(entry, pattern.kind, pattern.platform, Scope.SYSTEM),
                 kind=pattern.kind,
@@ -336,15 +521,29 @@ def discover_targets(
                 scope=Scope.SYSTEM,
                 entry_path=str(entry),
                 root_dir=str(entry.parent),
-                files=_collect_skill_files(entry),
+                files=_collect_skill_files(entry, diagnostics),
             )
             discovered[str(entry)] = target
 
     for pattern in EXTENSION_PATTERNS:
-        if Scope.EXTENSION not in selected_scopes or not matches_platform(platform, pattern.platform):
+        if Scope.EXTENSION not in selected_scopes or not matches_platform(platform, pattern.platform, pattern.explicit_platform_only):
             continue
-        for match in _iter_matches(home, pattern.glob):
-            for target in _extension_targets(match.resolve()):
+        for match in _iter_matches(home, pattern.glob, diagnostics):
+            try:
+                match_resolved = match.resolve()
+            except OSError as error:
+                _warn_oserror(diagnostics, f"failed resolving extension manifest '{match}'", error)
+                continue
+            for target in _extension_targets(match_resolved, diagnostics):
                 discovered[target.entry_path] = target
 
-    return sorted(discovered.values(), key=lambda item: item.entry_path)
+    return (sorted(discovered.values(), key=lambda item: item.entry_path), diagnostics.warnings)
+
+
+def discover_targets(
+    path: str | None = None,
+    platform: Platform = Platform.ALL,
+    scopes: set[Scope] | None = None,
+) -> list[ScanTarget]:
+    targets, _warnings = discover_targets_with_diagnostics(path=path, platform=platform, scopes=scopes)
+    return targets

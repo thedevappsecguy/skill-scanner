@@ -79,6 +79,34 @@ def test_doctor_check_fails_on_openai_error(monkeypatch) -> None:
     assert "OpenAI check: FAIL" in result.stdout
 
 
+def test_discover_scope_user_passed_to_discovery(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_discover(**kwargs):
+        captured.update(kwargs)
+        return ([], [])
+
+    monkeypatch.setattr(cli_module, "discover_targets_with_diagnostics", _fake_discover)
+
+    result = runner.invoke(app, ["discover", "--scope", "user"])
+    assert result.exit_code == 0
+    assert captured["scopes"] == {Scope.USER}
+
+
+def test_discover_verbose_surfaces_warning_details(monkeypatch) -> None:
+    target = _scan_target("/tmp/SKILL.md")
+    monkeypatch.setattr(
+        cli_module,
+        "discover_targets_with_diagnostics",
+        lambda **_kwargs: ([target], ["failed scanning '/tmp/demo': PermissionError: denied"]),
+    )
+
+    result = runner.invoke(app, ["discover", "--verbose"])
+    assert result.exit_code == 0
+    assert "Discovery warnings: 1" in result.stdout
+    assert "PermissionError: denied" in result.stdout
+
+
 def test_scan_summary_format_output(monkeypatch, fixture_root) -> None:
     monkeypatch.setattr(
         cli_module,
