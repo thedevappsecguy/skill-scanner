@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import skill_scanner.discovery.finder as finder_module
@@ -267,19 +268,30 @@ def test_discover_handles_repo_glob_errors_without_crashing(tmp_path: Path, monk
     assert any("InterruptedError" in warning for warning in warnings)
 
 
-def test_custom_path_handles_glob_errors_without_crashing(tmp_path: Path, monkeypatch) -> None:
-    original_glob = Path.glob
+def test_custom_path_handles_walk_errors_without_crashing(tmp_path: Path, monkeypatch) -> None:
+    original_walk = os.walk
 
-    def _broken_glob(self: Path, pattern: str):
-        if str(self) == str(tmp_path):
+    def _broken_walk(top, *args, **kwargs):
+        if str(top) == str(tmp_path):
             raise PermissionError("access denied")
-        return original_glob(self, pattern)
+        return original_walk(top, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "glob", _broken_glob)
+    monkeypatch.setattr(finder_module.os, "walk", _broken_walk)
 
     targets, warnings = discover_targets_with_diagnostics(path=str(tmp_path), platform=Platform.ALL)
     assert targets == []
     assert any("PermissionError" in warning for warning in warnings)
+
+
+def test_custom_path_does_not_emit_repo_scope_warning(tmp_path: Path, monkeypatch) -> None:
+    skill_path = tmp_path / "SKILL.md"
+    skill_path.write_text("No frontmatter.\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    targets, warnings = discover_targets_with_diagnostics(path=str(tmp_path), platform=Platform.ALL)
+
+    assert any(target.kind.value == "skill" for target in targets)
+    assert not any("Skipping repo scope" in warning for warning in warnings)
 
 
 def test_default_discovery_skips_repo_scope_outside_git_repo(tmp_path: Path, monkeypatch) -> None:

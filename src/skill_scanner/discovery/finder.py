@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from skill_scanner.discovery.patterns import (
     EXTENSION_PATTERNS,
@@ -143,32 +145,46 @@ def _is_ignored_file(path: Path, root: Path) -> bool:
 
 
 def _iter_files(root: Path, diagnostics: DiscoveryDiagnostics, *, apply_ignores: bool = True) -> list[Path]:
-    files: list[Path] = []
+    return sorted(
+        _walk_files(root, diagnostics, apply_ignores=apply_ignores),
+        key=lambda item: str(item),
+    )
+
+
+def _walk_files(root: Path, diagnostics: DiscoveryDiagnostics, *, apply_ignores: bool = True) -> Iterator[Path]:
+    def _onerror(error: OSError) -> None:
+        _warn_oserror(diagnostics, f"failed walking files under '{root}'", error)
+
     try:
-        iterator = root.rglob("*")
+        walker = os.walk(root, topdown=True, onerror=_onerror, followlinks=False)
     except OSError as error:
         _warn_oserror(diagnostics, f"failed walking files under '{root}'", error)
-        return files
+        return
 
-    while True:
-        try:
-            file_path = next(iterator)
-        except StopIteration:
-            break
-        except OSError as error:
-            _warn_oserror(diagnostics, f"failed walking files under '{root}'", error)
-            break
-        try:
-            if not file_path.is_file():
+    for dirpath, dirnames, filenames in walker:
+        current_dir = Path(dirpath)
+
+        if apply_ignores:
+            dirnames[:] = [name for name in dirnames if name not in IGNORED_DIR_NAMES]
+
+        for filename in filenames:
+            if apply_ignores:
+                if filename in IGNORED_FILE_NAMES:
+                    continue
+                if any(filename.endswith(suffix) for suffix in IGNORED_FILE_SUFFIXES):
+                    continue
+
+            file_path = current_dir / filename
+            try:
+                if not file_path.is_file():
+                    continue
+            except OSError as error:
+                _warn_oserror(diagnostics, f"failed reading file metadata '{file_path}'", error)
                 continue
-        except OSError as error:
-            _warn_oserror(diagnostics, f"failed reading file metadata '{file_path}'", error)
-            continue
-        if apply_ignores and _is_ignored_file(file_path, root):
-            continue
-        files.append(file_path)
 
-    return sorted(files, key=lambda item: str(item))
+            if apply_ignores and _is_ignored_file(file_path, root):
+                continue
+            yield file_path
 
 
 def _to_skill_file(path: Path, root: Path, diagnostics: DiscoveryDiagnostics) -> SkillFile | None:
@@ -374,6 +390,38 @@ def _custom_path_globs(pattern: str) -> tuple[str, ...]:
     return (pattern, f"**/{pattern}")
 
 
+def _custom_path_matchers(platform: Platform) -> list[tuple[DiscoveryPattern, str]]:
+    matchers: list[tuple[DiscoveryPattern, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for pattern in CUSTOM_PATH_PATTERNS:
+        if not matches_platform(platform, pattern.platform, pattern.explicit_platform_only):
+            continue
+        for glob_pattern in _custom_path_globs(pattern.glob):
+            key = (pattern.platform.value, pattern.kind.value, glob_pattern)
+            if key in seen:
+                continue
+            seen.add(key)
+            matchers.append((pattern, glob_pattern))
+    return matchers
+
+
+def _is_custom_path_candidate_file(path: Path) -> bool:
+    name = path.name
+    if name in {
+        "SKILL.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "GEMINI.md",
+        "copilot-instructions.md",
+        ".cursorrules",
+        "package.json",
+    }:
+        return True
+    if name.endswith((".agent.md", ".instructions.md", ".prompt.md", ".mdc")):
+        return True
+    return name.endswith(".md") and path.parent.name in {"agents", "commands"}
+
+
 def _targets_from_custom_directory(
     root: Path,
     platform: Platform,
@@ -381,60 +429,73 @@ def _targets_from_custom_directory(
     diagnostics: DiscoveryDiagnostics,
 ) -> list[ScanTarget]:
     discovered: dict[str, ScanTarget] = {}
-    for pattern in CUSTOM_PATH_PATTERNS:
-        if not matches_platform(platform, pattern.platform, pattern.explicit_platform_only):
+    matchers = _custom_path_matchers(platform)
+    if not matchers:
+        return []
+
+    try:
+        root_resolved = root.resolve()
+    except OSError:
+        root_resolved = root
+
+    for file_path in _walk_files(root, diagnostics, apply_ignores=True):
+        if not _is_custom_path_candidate_file(file_path):
             continue
-        for glob_pattern in _custom_path_globs(pattern.glob):
-            for match in _iter_matches(root, glob_pattern, diagnostics):
-                try:
-                    if not match.is_file():
-                        continue
-                except OSError as error:
-                    _warn_oserror(diagnostics, f"failed reading file metadata '{match}'", error)
-                    continue
-                if _is_ignored_file(match, root):
-                    continue
 
-                try:
-                    entry = match.resolve()
-                except OSError as error:
-                    _warn_oserror(diagnostics, f"failed resolving discovered match '{match}'", error)
-                    continue
+        try:
+            relative = file_path.relative_to(root_resolved).as_posix()
+        except ValueError:
+            try:
+                relative = file_path.relative_to(root).as_posix()
+            except ValueError:
+                continue
 
-                if pattern.kind == TargetKind.EXTENSION:
-                    for extension_target in _extension_targets(entry, diagnostics):
-                        target = ScanTarget(
-                            id=_target_id(
-                                Path(extension_target.entry_path),
-                                extension_target.kind,
-                                extension_target.platform,
-                                scope,
-                            ),
-                            kind=extension_target.kind,
-                            platform=extension_target.platform,
-                            scope=scope,
-                            entry_path=extension_target.entry_path,
-                            root_dir=extension_target.root_dir,
-                            files=extension_target.files,
-                        )
-                        discovered[target.entry_path] = target
-                    continue
+        relative_path = PurePosixPath(relative)
 
-                files = (
-                    _collect_skill_files(entry, diagnostics)
-                    if pattern.kind == TargetKind.SKILL
-                    else _single_file(entry, root, diagnostics)
-                )
-                target = ScanTarget(
-                    id=_target_id(entry, pattern.kind, pattern.platform, scope),
-                    kind=pattern.kind,
-                    platform=pattern.platform,
-                    scope=scope,
-                    entry_path=str(entry),
-                    root_dir=str(entry.parent),
-                    files=files,
-                )
-                discovered[str(entry)] = target
+        for pattern, glob_pattern in matchers:
+            if not relative_path.match(glob_pattern):
+                continue
+
+            try:
+                entry = file_path.resolve()
+            except OSError as error:
+                _warn_oserror(diagnostics, f"failed resolving discovered match '{file_path}'", error)
+                continue
+
+            if pattern.kind == TargetKind.EXTENSION:
+                for extension_target in _extension_targets(entry, diagnostics):
+                    target = ScanTarget(
+                        id=_target_id(
+                            Path(extension_target.entry_path),
+                            extension_target.kind,
+                            extension_target.platform,
+                            scope,
+                        ),
+                        kind=extension_target.kind,
+                        platform=extension_target.platform,
+                        scope=scope,
+                        entry_path=extension_target.entry_path,
+                        root_dir=extension_target.root_dir,
+                        files=extension_target.files,
+                    )
+                    discovered[target.entry_path] = target
+                continue
+
+            files = (
+                _collect_skill_files(entry, diagnostics)
+                if pattern.kind == TargetKind.SKILL
+                else _single_file(entry, root, diagnostics)
+            )
+            target = ScanTarget(
+                id=_target_id(entry, pattern.kind, pattern.platform, scope),
+                kind=pattern.kind,
+                platform=pattern.platform,
+                scope=scope,
+                entry_path=str(entry),
+                root_dir=str(entry.parent),
+                files=files,
+            )
+            discovered[str(entry)] = target
 
     return sorted(discovered.values(), key=lambda item: item.entry_path)
 
@@ -524,17 +585,6 @@ def discover_targets_with_diagnostics(
     scopes: set[Scope] | None = None,
 ) -> tuple[list[ScanTarget], list[str]]:
     diagnostics = DiscoveryDiagnostics()
-    selected_scopes = scopes or {Scope.REPO, Scope.USER, Scope.SYSTEM, Scope.EXTENSION}
-    cwd = Path.cwd()
-    repo_root = _repo_root(cwd)
-    repo_scope_enabled = Scope.REPO in selected_scopes and repo_root is not None
-
-    if Scope.REPO in selected_scopes and repo_root is None:
-        diagnostics.warn(
-            f"Skipping repo scope because '{cwd}' is not inside a git repository. "
-            "Use --path or run from a repository root."
-        )
-
     if path:
         try:
             custom_path = Path(path).expanduser().resolve()
@@ -545,6 +595,17 @@ def discover_targets_with_diagnostics(
             return ([], diagnostics.warnings)
         targets = _targets_from_custom_path(custom_path, platform, Scope.REPO, diagnostics)
         return (targets, diagnostics.warnings)
+
+    selected_scopes = scopes or {Scope.REPO, Scope.USER, Scope.SYSTEM, Scope.EXTENSION}
+    cwd = Path.cwd()
+    repo_root = _repo_root(cwd)
+    repo_scope_enabled = Scope.REPO in selected_scopes and repo_root is not None
+
+    if Scope.REPO in selected_scopes and repo_root is None:
+        diagnostics.warn(
+            f"Skipping repo scope because '{cwd}' is not inside a git repository. "
+            "Use --path or run from a repository root."
+        )
 
     discovered: dict[str, ScanTarget] = {}
 
