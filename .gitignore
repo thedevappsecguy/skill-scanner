@@ -14,5 +14,6 @@ build/
 .cache/
 reports/
 .env
+docs/
 
 SKILL.md
