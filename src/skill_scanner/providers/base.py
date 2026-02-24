@@ -15,7 +15,7 @@ class LLMProvider(ABC):
         self.model = model
 
     @abstractmethod
-    def analyze(self, target: ScanTarget, payload: str) -> AIReport:
+    async def analyze(self, target: ScanTarget, payload: str) -> AIReport:
         raise NotImplementedError
 
 

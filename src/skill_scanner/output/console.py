@@ -16,6 +16,7 @@ def render_console_report(report: ScanReport, *, no_color: bool = False) -> None
     table.add_column("Score", justify="right")
     table.add_column("Findings", justify="right")
     table.add_column("VT", justify="right")
+    table.add_column("Notes", justify="right")
 
     for item in report.reports:
         vt = item.vt_report
@@ -29,8 +30,17 @@ def render_console_report(report: ScanReport, *, no_color: bool = False) -> None
             f"{item.score:.2f}",
             str(findings),
             str(vt_count),
+            str(len(item.notes)),
         )
 
     console.print(table)
     console.print(f"Scanned targets: {report.scanned_targets}")
     console.print(f"Summary: {report.summary}")
+
+    noted_items = [item for item in report.reports if item.notes]
+    if noted_items:
+        console.print("Notes:")
+        for item in noted_items:
+            console.print(f"- {item.target.entry_path}")
+            for note in item.notes:
+                console.print(f"  - {note}")

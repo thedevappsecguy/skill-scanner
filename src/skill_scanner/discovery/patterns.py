@@ -27,6 +27,10 @@ REPO_PATTERNS: tuple[DiscoveryPattern, ...] = (
     DiscoveryPattern(Platform.CURSOR, Scope.REPO, ".cursor/rules/*.mdc", TargetKind.RULE),
     DiscoveryPattern(Platform.CURSOR, Scope.REPO, ".cursorrules", TargetKind.RULE),
     DiscoveryPattern(Platform.CURSOR, Scope.REPO, ".cursor/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(Platform.WINDSURF, Scope.REPO, ".windsurf/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(Platform.GEMINI, Scope.REPO, ".gemini/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(Platform.CLINE, Scope.REPO, ".cline/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(Platform.OPENCODE, Scope.REPO, ".opencode/skills/*/SKILL.md", TargetKind.SKILL),
     DiscoveryPattern(Platform.VSCODE, Scope.REPO, ".github/prompts/**/*.prompt.md", TargetKind.PROMPT),
     DiscoveryPattern(Platform.VSCODE, Scope.REPO, ".github/agents/**/*.agent.md", TargetKind.AGENT),
 )
@@ -39,6 +43,10 @@ USER_PATTERNS: tuple[DiscoveryPattern, ...] = (
     DiscoveryPattern(Platform.CODEX, Scope.USER, ".agents/skills/*/SKILL.md", TargetKind.SKILL),
     DiscoveryPattern(Platform.COPILOT, Scope.USER, ".copilot/copilot-instructions.md", TargetKind.INSTRUCTION),
     DiscoveryPattern(Platform.COPILOT, Scope.USER, ".copilot/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(Platform.WINDSURF, Scope.USER, ".codeium/windsurf/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(Platform.GEMINI, Scope.USER, ".gemini/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(Platform.CLINE, Scope.USER, ".cline/skills/*/SKILL.md", TargetKind.SKILL),
+    DiscoveryPattern(Platform.OPENCODE, Scope.USER, ".config/opencode/skills/*/SKILL.md", TargetKind.SKILL),
 )
 
 SYSTEM_PATTERNS: tuple[DiscoveryPattern, ...] = (

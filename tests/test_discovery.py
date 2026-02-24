@@ -57,3 +57,63 @@ def test_custom_root_skill_includes_referenced_script(tmp_path: Path) -> None:
     assert len(targets) == 1
     rel_paths = {file.relative_path for file in targets[0].files}
     assert rel_paths == {"SKILL.md", "scripts/install.sh"}
+
+
+def _write_skill(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("---\nname: test\ndescription: demo\n---\nbody\n", encoding="utf-8")
+
+
+def test_repo_patterns_discover_windsurf_gemini_cline_opencode(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / ".git").mkdir()
+    _write_skill(tmp_path / ".windsurf/skills/a/SKILL.md")
+    _write_skill(tmp_path / ".gemini/skills/b/SKILL.md")
+    _write_skill(tmp_path / ".cline/skills/c/SKILL.md")
+    _write_skill(tmp_path / ".opencode/skills/d/SKILL.md")
+
+    monkeypatch.chdir(tmp_path)
+    targets = discover_targets(platform=Platform.ALL, scopes={Scope.REPO})
+
+    platforms = {target.platform for target in targets if target.kind.value == "skill"}
+    assert platforms.issuperset(
+        {Platform.WINDSURF, Platform.GEMINI, Platform.CLINE, Platform.OPENCODE}
+    )
+
+
+def test_user_patterns_discover_windsurf_gemini_cline_opencode(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    _write_skill(tmp_path / ".codeium/windsurf/skills/a/SKILL.md")
+    _write_skill(tmp_path / ".gemini/skills/b/SKILL.md")
+    _write_skill(tmp_path / ".cline/skills/c/SKILL.md")
+    _write_skill(tmp_path / ".config/opencode/skills/d/SKILL.md")
+
+    targets = discover_targets(platform=Platform.ALL, scopes={Scope.USER})
+
+    platforms = {target.platform for target in targets if target.kind.value == "skill"}
+    assert platforms.issuperset(
+        {Platform.WINDSURF, Platform.GEMINI, Platform.CLINE, Platform.OPENCODE}
+    )
+
+
+def test_platform_filter_returns_only_windsurf(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / ".git").mkdir()
+    _write_skill(tmp_path / ".windsurf/skills/a/SKILL.md")
+    _write_skill(tmp_path / ".gemini/skills/b/SKILL.md")
+
+    monkeypatch.chdir(tmp_path)
+    targets = discover_targets(platform=Platform.WINDSURF, scopes={Scope.REPO})
+
+    assert targets
+    assert all(target.platform == Platform.WINDSURF for target in targets)
+
+
+def test_continue_and_amazonq_paths_are_not_discovered(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / ".git").mkdir()
+    _write_skill(tmp_path / ".continue/skills/a/SKILL.md")
+    _write_skill(tmp_path / ".amazonq/skills/b/SKILL.md")
+
+    monkeypatch.chdir(tmp_path)
+    targets = discover_targets(platform=Platform.ALL, scopes={Scope.REPO})
+
+    assert targets == []

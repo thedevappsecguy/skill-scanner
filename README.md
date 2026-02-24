@@ -37,6 +37,13 @@ uv run skillscan --help
 
 By default, `discover` and `scan` detect markdown-based skill/instruction artifacts (for example `SKILL.md`, `AGENTS.md`, `CLAUDE.md`, `*.instructions.md`, `*.prompt.md`, `*.agent.md`, `.mdc`).
 
+Validated skill locations also include:
+
+- Windsurf: `.windsurf/skills/*/SKILL.md`, `~/.codeium/windsurf/skills/*/SKILL.md`
+- Gemini CLI: `.gemini/skills/*/SKILL.md`, `~/.gemini/skills/*/SKILL.md`
+- Cline: `.cline/skills/*/SKILL.md`, `~/.cline/skills/*/SKILL.md`
+- OpenCode: `.opencode/skills/*/SKILL.md`, `~/.config/opencode/skills/*/SKILL.md`
+
 Use `--path` to target a specific file or folder.
 
 ## Quick start
@@ -47,6 +54,9 @@ uv run skill-scanner discover --format json
 
 # Verify key/model configuration
 uv run skill-scanner doctor
+
+# Run live API checks (fails non-zero if checks fail)
+uv run skill-scanner doctor --check
 
 # Run a combined scan (if both keys are configured)
 uv run skill-scanner scan --format summary
@@ -60,6 +70,9 @@ uv run skill-scanner scan --format summary
 - If only `VT_API_KEY` is available, VT runs and AI is disabled.
 - If both keys are available, VT findings are included and VT context is passed into AI analysis.
 - You can disable either analyzer with `--no-ai` or `--no-vt`.
+- If no model is configured, `gpt-5.2` is used as a fallback model.
+
+Use `doctor --check` to verify the provider/key/model connectivity.
 
 ## API key safety
 
@@ -101,6 +114,12 @@ uv run skill-scanner providers
 # Scan one path only
 uv run skill-scanner scan --path ./some/skill/folder --format summary
 
+# Increase scan concurrency (default: 8)
+uv run skill-scanner scan --jobs 16 --format summary
+
+# Enable verbose logs for troubleshooting
+uv run skill-scanner scan --verbose --format summary
+
 # List discovered targets without running analyzers
 uv run skill-scanner scan --list-targets
 
@@ -112,6 +131,9 @@ uv run skill-scanner scan --min-severity medium --format summary
 
 # Non-zero exit if high+ findings exist
 uv run skill-scanner scan --fail-on high --format summary
+
+# Verbose doctor checks
+uv run skill-scanner doctor --check --verbose
 ```
 
 `--list-targets` can be used without API keys because it only runs discovery and exits.
@@ -121,3 +143,16 @@ uv run skill-scanner scan --fail-on high --format summary
 - `0`: scan completed and fail threshold not hit
 - `1`: `--fail-on` threshold matched
 - `2`: no analyzers enabled (for example missing keys combined with flags), or `--target` did not match any discovered target
+
+`doctor --check` exit behavior:
+
+- `0`: all executed checks passed
+- `1`: one or more checks failed
+
+## Notes and truncation visibility
+
+`scan` now surfaces per-target notes in table and summary output, including:
+
+- analyzer failures (OpenAI or VirusTotal)
+- payload truncation when files are skipped due to the 400k-character AI payload limit
+- unreadable files excluded from payload construction

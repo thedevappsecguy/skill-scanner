@@ -31,6 +31,10 @@ class Platform(StrEnum):
     CLAUDE = "claude"
     COPILOT = "copilot"
     CURSOR = "cursor"
+    WINDSURF = "windsurf"
+    GEMINI = "gemini"
+    CLINE = "cline"
+    OPENCODE = "opencode"
     VSCODE = "vscode"
     GENERIC = "generic"
 
