@@ -81,6 +81,13 @@ def format_summary_report(report: ScanReport) -> str:
                 vt_line += f" | {vt.permalink}"
             lines.append(vt_line)
 
+        if item.notes:
+            lines.append("Notes:")
+            for note_index, note in enumerate(item.notes, start=1):
+                lines.append(f"{note_index}. {note}")
+        else:
+            lines.append("Notes: none")
+
         top_findings = _top_findings(item)
         if not top_findings:
             lines.append("Top findings: none")

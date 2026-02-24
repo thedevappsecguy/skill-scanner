@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from skill_scanner.analyzers.ai_analyzer import analyze_with_ai, build_payload
@@ -28,8 +29,9 @@ def test_build_payload_skips_large_file_and_keeps_scanning(tmp_path: Path) -> No
     )
 
     payload = build_payload(target, max_chars=500)
-    assert "small.md" in payload
-    assert "safe content" in payload
+    assert "small.md" in payload.payload
+    assert "safe content" in payload.payload
+    assert payload.skipped_due_to_limit == ["large.md"]
 
 
 class _RecordingProvider(LLMProvider):
@@ -39,7 +41,7 @@ class _RecordingProvider(LLMProvider):
         super().__init__(api_key="test-key", model="test-model")
         self.last_payload = ""
 
-    def analyze(self, target: ScanTarget, payload: str) -> AIReport:
+    async def analyze(self, target: ScanTarget, payload: str) -> AIReport:
         self.last_payload = payload
         return AIReport(provider=self.name, model=self.model, findings=[])
 
@@ -66,6 +68,7 @@ def test_analyze_with_ai_includes_vt_context(tmp_path: Path) -> None:
         permalink="https://example.test/vt",
     )
 
-    analyze_with_ai(target, provider, vt_report=vt_report)
+    _, payload_result = asyncio.run(analyze_with_ai(target, provider, vt_report=vt_report))
     assert "## VIRUSTOTAL_CONTEXT" in provider.last_payload
     assert "malicious: 1" in provider.last_payload
+    assert payload_result.included_files == 1

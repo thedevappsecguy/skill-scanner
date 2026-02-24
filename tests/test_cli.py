@@ -38,6 +38,45 @@ def test_doctor_command() -> None:
     assert "provider=" in result.stdout
     assert "OPENAI_API_KEY" in result.stdout
     assert "VT_API_KEY" in result.stdout
+    assert "Model fallback" in result.stdout
+
+
+def test_doctor_check_success(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli_module,
+        "load_settings",
+        lambda **_: Settings(
+            provider="openai",
+            model="gpt-5.2",
+            openai_api_key="openai-key",
+            vt_api_key="vt-key",
+        ),
+    )
+    monkeypatch.setattr(cli_module, "_check_openai", lambda *_args, **_kwargs: (True, "ok"))
+    monkeypatch.setattr(cli_module, "_check_vt", lambda *_args, **_kwargs: (True, "ok"))
+
+    result = runner.invoke(app, ["doctor", "--check"])
+    assert result.exit_code == 0
+    assert "OpenAI check: PASS" in result.stdout
+    assert "VirusTotal check: PASS" in result.stdout
+
+
+def test_doctor_check_fails_on_openai_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli_module,
+        "load_settings",
+        lambda **_: Settings(
+            provider="openai",
+            model="gpt-5.2",
+            openai_api_key="bad-key",
+            vt_api_key=None,
+        ),
+    )
+    monkeypatch.setattr(cli_module, "_check_openai", lambda *_args, **_kwargs: (False, "invalid"))
+
+    result = runner.invoke(app, ["doctor", "--check"])
+    assert result.exit_code == 1
+    assert "OpenAI check: FAIL" in result.stdout
 
 
 def test_scan_summary_format_output(monkeypatch, fixture_root) -> None:
@@ -76,6 +115,48 @@ def test_scan_summary_format_output(monkeypatch, fixture_root) -> None:
     assert result.exit_code == 0
     assert "Skill Scanner Summary" in result.stdout
     assert "Scanned targets:" in result.stdout
+
+
+def test_scan_passes_jobs_to_pipeline(monkeypatch, fixture_root) -> None:
+    monkeypatch.setattr(
+        cli_module,
+        "load_settings",
+        lambda **_: Settings(
+            provider="openai",
+            model="gpt-5.2",
+            openai_api_key="openai-key",
+            vt_api_key=None,
+        ),
+    )
+    monkeypatch.setattr(cli_module, "create_provider", lambda *_args, **_kwargs: object())
+
+    captured: dict[str, object] = {}
+
+    def _fake_run_scan(targets, **kwargs):
+        captured.update(kwargs)
+        return ScanReport(
+            scanned_targets=len(targets),
+            reports=[],
+            summary={"critical": 0, "high": 0, "medium": 0, "low": 0, "clean": 0},
+        )
+
+    monkeypatch.setattr(cli_module, "run_scan", _fake_run_scan)
+
+    result = runner.invoke(
+        app,
+        [
+            "scan",
+            "--path",
+            str(fixture_root / "clean_skill"),
+            "--no-vt",
+            "--jobs",
+            "4",
+            "--format",
+            "summary",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured["jobs"] == 4
 
 
 def test_min_severity_filter_recomputes_score_and_summary() -> None:

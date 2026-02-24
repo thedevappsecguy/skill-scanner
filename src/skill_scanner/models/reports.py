@@ -21,6 +21,7 @@ class AIReport(BaseModel):
     model: str
     findings: list[Finding] = Field(default_factory=list)
     raw_response: str | None = None
+    error: str | None = None
 
 
 class VTReport(BaseModel):
@@ -31,6 +32,11 @@ class VTReport(BaseModel):
     undetected: int = 0
     source: str = "virustotal"
     permalink: str | None = None
+
+
+class VTScanResult(BaseModel):
+    report: VTReport | None = None
+    error: str | None = None
 
 
 class SkillReport(BaseModel):

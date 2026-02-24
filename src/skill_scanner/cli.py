@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from pathlib import Path
 
+import httpx
 import typer
 from rich.console import Console
 
@@ -28,6 +30,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 @app.callback(invoke_without_command=True)
@@ -70,8 +73,12 @@ def providers() -> None:
 def doctor(
     provider: str | None = typer.Option(None, help="Provider name override (env: SKILLSCAN_PROVIDER)."),
     model: str | None = typer.Option(None, help="Model override (env: SKILLSCAN_MODEL)."),
+    check: bool = typer.Option(False, "--check", help="Run live provider/API checks."),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logs."),
 ) -> None:
+    _configure_logging(verbose)
     settings = load_settings(provider=provider, model=model)
+
     console.print(f"provider={settings.provider}")
     console.print(f"model={settings.model}")
     console.print(f"OPENAI_API_KEY={'set' if settings.openai_api_key else 'missing'}")
@@ -80,6 +87,38 @@ def doctor(
     console.print("- Set OpenAI key: export OPENAI_API_KEY=... (or put OPENAI_API_KEY=... in .env)")
     console.print("- Set VirusTotal key: export VT_API_KEY=... (or put VT_API_KEY=... in .env)")
     console.print("- `scan` requires at least one analyzer enabled (AI or VT).")
+    console.print(
+        "- Model fallback: when no model is configured, skill-scanner uses gpt-5.2. "
+        "Use `doctor --check` to verify availability in your account."
+    )
+
+    if not check:
+        return
+
+    failures = 0
+    checks_run = 0
+
+    if settings.provider == "openai":
+        checks_run += 1
+        ok, message = _check_openai(settings.openai_api_key, settings.model)
+        console.print(f"OpenAI check: {'PASS' if ok else 'FAIL'} - {message}")
+        if not ok:
+            failures += 1
+    else:
+        console.print(f"OpenAI check: SKIP - provider '{settings.provider}' is not openai")
+
+    if settings.vt_api_key:
+        checks_run += 1
+        ok, message = _check_vt(settings.vt_api_key)
+        console.print(f"VirusTotal check: {'PASS' if ok else 'FAIL'} - {message}")
+        if not ok:
+            failures += 1
+    else:
+        console.print("VirusTotal check: SKIP - VT_API_KEY is missing")
+
+    logger.info("doctor --check completed: checks_run=%s failures=%s", checks_run, failures)
+    if failures > 0:
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -97,6 +136,7 @@ def scan(
     model: str | None = typer.Option(None, help="Model name (env: SKILLSCAN_MODEL)."),
     no_ai: bool = typer.Option(False, help="Disable AI analysis (OpenAI key env: OPENAI_API_KEY)."),
     no_vt: bool = typer.Option(False, help="Disable VirusTotal analysis (key env: VT_API_KEY)."),
+    jobs: int = typer.Option(8, min=1, help="Maximum concurrent targets to scan."),
     vt_timeout: int = typer.Option(300, min=1, help="VirusTotal analysis timeout in seconds."),
     vt_poll_interval: int = typer.Option(10, min=1, help="VirusTotal polling interval in seconds."),
     min_severity: Severity = typer.Option(Severity.INFO, help="Minimum severity to include."),
@@ -104,7 +144,10 @@ def scan(
     format: str = typer.Option("table", help="table|json|sarif|summary"),
     output: str | None = typer.Option(None, help="Optional output file path."),
     no_color: bool = typer.Option(False, help="Disable color output."),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logs."),
 ) -> None:
+    _configure_logging(verbose)
+
     selected_scopes = set(scope) if scope else {Scope.REPO, Scope.USER, Scope.SYSTEM, Scope.EXTENSION}
     targets = discover_targets(path=path, platform=platform, scopes=selected_scopes)
     if target:
@@ -121,6 +164,16 @@ def scan(
     settings = load_settings(provider=provider, model=model)
 
     enable_ai, enable_vt = _resolve_analyzer_selection(settings, no_ai=no_ai, no_vt=no_vt)
+    logger.info(
+        "scan config: targets=%s jobs=%s enable_ai=%s enable_vt=%s provider=%s model=%s",
+        len(targets),
+        jobs,
+        enable_ai,
+        enable_vt,
+        settings.provider,
+        settings.model,
+    )
+
     if not enable_ai and not enable_vt:
         console.print(
             "No analyzers enabled for scan. "
@@ -140,6 +193,7 @@ def scan(
         enable_vt=enable_vt,
         vt_timeout_s=vt_timeout,
         vt_poll_interval_s=vt_poll_interval,
+        jobs=jobs,
     )
 
     if min_severity != Severity.INFO:
@@ -164,6 +218,49 @@ def scan(
 
     if fail_on and _has_failures(report, fail_on):
         raise typer.Exit(code=1)
+
+
+def _configure_logging(verbose: bool) -> None:
+    level = logging.INFO if verbose else logging.WARNING
+    logging.basicConfig(
+        level=level,
+        format="%(levelname)s %(name)s: %(message)s",
+        force=True,
+    )
+
+
+def _check_openai(api_key: str | None, model: str) -> tuple[bool, str]:
+    if not api_key:
+        return False, "OPENAI_API_KEY is missing"
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return False, "openai package is not installed (install skill-scanner[openai])"
+
+    try:
+        client = OpenAI(api_key=api_key)
+        client.models.retrieve(model)
+    except Exception as exc:
+        return False, f"OpenAI check failed: {exc}"
+
+    return True, f"Model '{model}' is accessible"
+
+
+def _check_vt(api_key: str) -> tuple[bool, str]:
+    try:
+        response = httpx.get(
+            "https://www.virustotal.com/api/v3/users/current",
+            headers={"x-apikey": api_key},
+            timeout=20.0,
+        )
+    except Exception as exc:
+        return False, f"VirusTotal connectivity failed: {exc}"
+
+    if response.status_code == 200:
+        return True, "API key is valid"
+
+    return False, f"VirusTotal returned status {response.status_code}"
 
 
 def _resolve_analyzer_selection(

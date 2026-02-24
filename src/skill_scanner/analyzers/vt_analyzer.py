@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import logging
 import tempfile
 import time
 import zipfile
@@ -9,11 +11,14 @@ from typing import Any
 
 import httpx
 
-from skill_scanner.models.reports import VTReport
+from skill_scanner.models.reports import VTReport, VTScanResult
 from skill_scanner.models.targets import ScanTarget
-from skill_scanner.utils.retry import RetryableError, retry_with_backoff
+from skill_scanner.utils.retry import RetryableError, async_retry_with_backoff
 
 VT_BASE = "https://www.virustotal.com/api/v3"
+RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
+
+logger = logging.getLogger(__name__)
 
 
 def _sha256_file(path: Path) -> str:
@@ -39,58 +44,104 @@ def package_target(target: ScanTarget) -> tuple[Path, str]:
     return zip_path, _sha256_file(zip_path)
 
 
-def _request_with_retry(client: httpx.Client, method: str, url: str, **kwargs: Any) -> httpx.Response:
-    def _call() -> httpx.Response:
-        response = client.request(method=method, url=url, **kwargs)
-        if response.status_code in {429, 500, 502, 503, 504}:
+async def _request_with_retry(client: httpx.AsyncClient, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    async def _call() -> httpx.Response:
+        try:
+            response = await client.request(method=method, url=url, **kwargs)
+        except httpx.TransportError as exc:
+            raise RetryableError(f"Retryable VT transport error: {exc}") from exc
+        if response.status_code in RETRYABLE_STATUSES:
             raise RetryableError(f"Retryable VT status {response.status_code}")
         return response
 
-    return retry_with_backoff(_call, attempts=6, base_delay=1.0, max_delay=20.0)
+    return await async_retry_with_backoff(_call, attempts=6, base_delay=1.0, max_delay=20.0)
 
 
-def scan_with_vt(
+def _status_message(prefix: str, response: httpx.Response) -> str:
+    return f"{prefix} (status={response.status_code})"
+
+
+async def scan_with_vt(
     target: ScanTarget,
     api_key: str,
     timeout_s: int = 300,
     poll_interval_s: int = 10,
-) -> VTReport | None:
+) -> VTScanResult:
     zip_path, sha256 = package_target(target)
     try:
         headers = {"x-apikey": api_key}
-        with httpx.Client(headers=headers, timeout=60.0) as client:
-            cached = _request_with_retry(client, "GET", f"{VT_BASE}/files/{sha256}")
+        async with httpx.AsyncClient(headers=headers, timeout=60.0) as client:
+            logger.info("VirusTotal scan started for %s", target.entry_path)
+            try:
+                cached = await _request_with_retry(client, "GET", f"{VT_BASE}/files/{sha256}")
+            except Exception as exc:
+                return VTScanResult(error=f"VirusTotal cache lookup failed: {exc}")
+
             if cached.status_code == 200:
-                return _parse_vt_file(cached.json(), sha256)
+                return VTScanResult(report=_parse_vt_file(cached.json(), sha256))
+            if cached.status_code != 404:
+                return VTScanResult(error=_status_message("VirusTotal cache lookup failed", cached))
 
             with zip_path.open("rb") as handle:
-                upload = _request_with_retry(
-                    client,
-                    "POST",
-                    f"{VT_BASE}/files",
-                    files={"file": (f"{sha256}.zip", handle, "application/zip")},
-                )
+                try:
+                    upload = await _request_with_retry(
+                        client,
+                        "POST",
+                        f"{VT_BASE}/files",
+                        files={"file": (f"{sha256}.zip", handle, "application/zip")},
+                    )
+                except Exception as exc:
+                    return VTScanResult(error=f"VirusTotal upload failed: {exc}")
+
             if upload.status_code >= 400:
-                return None
+                return VTScanResult(error=_status_message("VirusTotal upload failed", upload))
 
-            analysis_id = upload.json().get("data", {}).get("id")
+            try:
+                analysis_id = upload.json().get("data", {}).get("id")
+            except Exception:
+                return VTScanResult(error="VirusTotal upload response was not valid JSON")
+
             if not analysis_id:
-                return None
+                return VTScanResult(error="VirusTotal upload response did not include analysis id")
 
-            deadline = time.time() + timeout_s
-            while time.time() < deadline:
-                analysis = _request_with_retry(client, "GET", f"{VT_BASE}/analyses/{analysis_id}")
+            deadline = time.monotonic() + timeout_s
+            timed_out = True
+            while time.monotonic() < deadline:
+                try:
+                    analysis = await _request_with_retry(client, "GET", f"{VT_BASE}/analyses/{analysis_id}")
+                except Exception as exc:
+                    return VTScanResult(error=f"VirusTotal analysis polling failed: {exc}")
+
                 if analysis.status_code >= 400:
-                    break
+                    return VTScanResult(error=_status_message("VirusTotal analysis polling failed", analysis))
+
                 status = analysis.json().get("data", {}).get("attributes", {}).get("status")
                 if status == "completed":
+                    timed_out = False
                     break
-                time.sleep(max(1, poll_interval_s))
+                await asyncio.sleep(max(1, poll_interval_s))
 
-            report = _request_with_retry(client, "GET", f"{VT_BASE}/files/{sha256}")
-            if report.status_code == 200:
-                return _parse_vt_file(report.json(), sha256)
-        return None
+            try:
+                report = await _request_with_retry(client, "GET", f"{VT_BASE}/files/{sha256}")
+            except Exception as exc:
+                if timed_out:
+                    return VTScanResult(error=f"VirusTotal timed out and report fetch failed: {exc}")
+                return VTScanResult(error=f"VirusTotal report fetch failed: {exc}")
+
+            if report.status_code != 200:
+                if timed_out:
+                    return VTScanResult(
+                        error=f"VirusTotal timed out after {timeout_s}s and report was unavailable (status={report.status_code})"
+                    )
+                return VTScanResult(error=_status_message("VirusTotal report fetch failed", report))
+
+            parsed = _parse_vt_file(report.json(), sha256)
+            if timed_out:
+                return VTScanResult(
+                    report=parsed,
+                    error=f"VirusTotal timed out after {timeout_s}s; using latest available file verdict",
+                )
+            return VTScanResult(report=parsed)
     finally:
         zip_path.unlink(missing_ok=True)
 
