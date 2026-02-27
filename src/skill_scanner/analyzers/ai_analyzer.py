@@ -67,14 +67,34 @@ def build_payload(target: ScanTarget, max_chars: int = 400_000) -> PayloadBuildR
 def _append_vt_context(payload: str, vt_report: VTReport | None) -> str:
     if vt_report is None:
         return payload
+    detected = vt_report.malicious + vt_report.suspicious
+    detection_percent = vt_report.detection_ratio * 100 if vt_report.analysis_total > 0 else 0.0
+    verdict = "clean"
+    if vt_report.malicious > 0:
+        verdict = "malicious"
+    elif vt_report.suspicious > 0:
+        verdict = "suspicious"
+
+    top_detections = "none"
+    if vt_report.top_detections:
+        top_detections = "\n".join(f"- {item}" for item in vt_report.top_detections)
+
     vt_context = (
         "\n## VIRUSTOTAL_CONTEXT\n"
         f"sha256: {vt_report.sha256}\n"
+        f"verdict: {verdict}\n"
         f"malicious: {vt_report.malicious}\n"
         f"suspicious: {vt_report.suspicious}\n"
         f"harmless: {vt_report.harmless}\n"
         f"undetected: {vt_report.undetected}\n"
+        f"detections: {detected}/{vt_report.analysis_total}\n"
+        f"detection_ratio: {vt_report.detection_ratio:.4f}\n"
+        f"detection_percent: {detection_percent:.2f}\n"
+        "top_detections:\n"
+        f"{top_detections}\n"
         f"permalink: {vt_report.permalink or 'n/a'}\n"
+        "guidance: Use VT as corroborating evidence to prioritize risk. "
+        "Do not emit a standalone finding that only restates VT counts/link without file-level evidence.\n"
     )
     return f"{payload}{vt_context}"
 

@@ -1,6 +1,6 @@
 [project]
 name = "skill-scanner"
-version = "0.1.6"
+version = "0.1.7"
 description = "Security scanner for AI agent skills and instruction artifacts"
 readme = "README.md"
 authors = [{ name = "skill-scanner" }]

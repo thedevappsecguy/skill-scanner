@@ -77,9 +77,17 @@ def format_summary_report(report: ScanReport) -> str:
                 f"malicious={vt.malicious}, suspicious={vt.suspicious}, "
                 f"undetected={vt.undetected}, harmless={vt.harmless}"
             )
+            if vt.analysis_total > 0:
+                detected = vt.malicious + vt.suspicious
+                vt_line += f", detections={detected}/{vt.analysis_total} ({vt.detection_ratio * 100:.2f}%)"
             if vt.permalink:
                 vt_line += f" | {vt.permalink}"
             lines.append(vt_line)
+            if vt.top_detections:
+                sample = ", ".join(vt.top_detections[:3])
+                remaining = len(vt.top_detections) - 3
+                suffix = "" if remaining <= 0 else f", +{remaining} more"
+                lines.append(f"VirusTotal engines: {sample}{suffix}")
 
         if item.notes:
             lines.append("Notes:")
