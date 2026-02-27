@@ -30,6 +30,9 @@ class VTReport(BaseModel):
     suspicious: int = 0
     harmless: int = 0
     undetected: int = 0
+    analysis_total: int = 0
+    detection_ratio: float = 0.0
+    top_detections: list[str] = Field(default_factory=list)
     source: str = "virustotal"
     permalink: str | None = None
 

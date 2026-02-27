@@ -117,6 +117,13 @@ async def _scan_target(
     if enable_ai and provider is not None:
         ai_report, payload_result = await analyze_with_ai(target, provider, vt_report=vt_report)
         notes.extend(_payload_notes(payload_result))
+        filtered_ai_findings, dropped_count = _filter_vt_only_ai_findings(ai_report.findings, vt_report)
+        if dropped_count > 0:
+            notes.append(
+                f"AI output normalized: removed {dropped_count} duplicate VirusTotal-only finding(s)."
+            )
+        if dropped_count > 0:
+            ai_report = ai_report.model_copy(update={"findings": filtered_ai_findings})
         if ai_report.error:
             notes.append(f"AI analysis: {ai_report.error}")
 
@@ -205,3 +212,31 @@ def _vt_findings(vt_report: object) -> list[Finding]:
         )
 
     return findings
+
+
+def _filter_vt_only_ai_findings(
+    findings: list[Finding],
+    vt_report: VTReport | None,
+) -> tuple[list[Finding], int]:
+    if vt_report is None or (vt_report.malicious + vt_report.suspicious) == 0:
+        return findings, 0
+
+    filtered: list[Finding] = []
+    dropped = 0
+    for finding in findings:
+        text = " ".join(
+            [
+                finding.title or "",
+                finding.description or "",
+                finding.recommendation or "",
+            ]
+        ).lower()
+        mentions_vt = "virustotal" in text or "vt context" in text
+        has_file_evidence = bool(finding.file_path) or finding.line is not None
+
+        if mentions_vt and not has_file_evidence:
+            dropped += 1
+            continue
+        filtered.append(finding)
+
+    return filtered, dropped

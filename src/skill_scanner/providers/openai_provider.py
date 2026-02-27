@@ -16,6 +16,10 @@ Return strict JSON with key `findings` as a list of objects with:
 category,severity,title,description,file_path,line,recommendation,cwe.
 Valid severities: critical,high,medium,low,info.
 Valid categories: prompt_injection,data_exfiltration,hidden_commands,permission_escalation,supply_chain_risk,filesystem_attack,social_engineering,credential_harvesting,malformed_skill,configuration_risk.
+When `VIRUSTOTAL_CONTEXT` is present:
+- Use it as corroborating evidence to prioritize and adjust severity/confidence of file-backed findings.
+- Prefer findings that reference concrete risky content in the payload (`file_path` and `line` when possible).
+- Do not emit a standalone finding that only repeats VT verdict counts or permalink without additional file-level evidence.
 Do not return prose outside JSON.
 """.strip()
 
