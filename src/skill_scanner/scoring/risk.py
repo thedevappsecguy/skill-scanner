@@ -51,10 +51,19 @@ def _risk_level(score: float) -> RiskLevel:
 
 
 def evaluate_risk(report: SkillReport) -> SkillReport:
-    ai_score = _findings_score(report)
-    vt_score = _vt_score(report)
+    ai_raw_score = _findings_score(report)
+    vt_raw_score = _vt_score(report)
+    scope_weight = _scope_weight(report.target.scope)
+    ai_score = min(100.0, ai_raw_score * scope_weight)
+    vt_score = min(100.0, vt_raw_score * scope_weight)
+
     combined = max(ai_score, vt_score) * 0.6 + min(ai_score, vt_score) * 0.4
-    combined *= _scope_weight(report.target.scope)
+
+    report.ai_score = round(ai_score, 2)
+    report.ai_risk_level = _risk_level(report.ai_score)
+    report.vt_score = round(vt_score, 2)
+    report.vt_risk_level = _risk_level(report.vt_score)
+
     report.score = round(min(100.0, combined), 2)
     report.risk_level = _risk_level(report.score)
     return report

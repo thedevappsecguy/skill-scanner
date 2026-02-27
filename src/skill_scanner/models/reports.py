@@ -47,6 +47,10 @@ class SkillReport(BaseModel):
     deterministic_findings: list[Finding] = Field(default_factory=list)
     ai_findings: list[Finding] = Field(default_factory=list)
     vt_report: VTReport | None = None
+    ai_score: float = 0.0
+    ai_risk_level: RiskLevel = RiskLevel.CLEAN
+    vt_score: float = 0.0
+    vt_risk_level: RiskLevel = RiskLevel.CLEAN
     score: float = 0.0
     risk_level: RiskLevel = RiskLevel.CLEAN
     notes: list[str] = Field(default_factory=list)

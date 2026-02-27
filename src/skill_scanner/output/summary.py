@@ -61,6 +61,11 @@ def format_summary_report(report: ScanReport) -> str:
         lines.append("")
         lines.append(f"Target {index}: {item.target.entry_path}")
         lines.append(f"Risk: {item.risk_level.value.upper()} ({item.score:.2f})")
+        lines.append(
+            "Signals: "
+            f"ai={item.ai_risk_level.value.upper()} ({item.ai_score:.2f}), "
+            f"vt={item.vt_risk_level.value.upper()} ({item.vt_score:.2f})"
+        )
         total_findings = len(item.deterministic_findings) + len(item.ai_findings)
         lines.append(
             "Findings: "
