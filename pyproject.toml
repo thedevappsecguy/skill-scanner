@@ -1,6 +1,6 @@
 [project]
 name = "skill-scanner"
-version = "0.1.7"
+version = "0.2.0"
 description = "Security scanner for AI agent skills and instruction artifacts"
 readme = "README.md"
 authors = [{ name = "skill-scanner" }]
@@ -8,7 +8,6 @@ requires-python = ">=3.11"
 dependencies = [
     "httpx==0.28.1",
     "pydantic==2.12.5",
-    "pyyaml==6.0.3",
     "rich==14.3.2",
     "typer==0.24.0",
 ]
@@ -24,7 +23,6 @@ dev = [
     "pytest==9.0.2",
     "pytest-cov==7.0.0",
     "ruff==0.15.1",
-    "types-PyYAML==6.0.12.20250915",
 ]
 
 [project.scripts]
