@@ -4,6 +4,9 @@
 [![Publish TestPyPI](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/publish-testpypi.yml/badge.svg?branch=main)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/publish-testpypi.yml)
 [![Publish PyPI](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/release.yml/badge.svg)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/release.yml)
 [![zizmor](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/zizmor.yml/badge.svg?branch=main)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/zizmor.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://github.com/thedevappsecguy/skill-scanner/blob/main/LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/skill-scanner.svg)](https://pypi.org/project/skill-scanner/)
+[![Security Policy](https://img.shields.io/badge/security-policy-blue.svg)](https://github.com/thedevappsecguy/skill-scanner/blob/main/SECURITY.md)
 
 `skill-scanner` reviews AI skill and instruction artifacts for security risk using:
 - OpenAI analysis
