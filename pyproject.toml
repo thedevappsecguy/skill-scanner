@@ -1,10 +1,14 @@
 [project]
 name = "skill-scanner"
-version = "0.2.1"
+version = "0.2.2"
 description = "Security scanner for AI agent skills and instruction artifacts"
 readme = "README.md"
 authors = [{ name = "skill-scanner" }]
 requires-python = ">=3.11"
+license = "MIT"
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+]
 dependencies = [
     "httpx==0.28.1",
     "pydantic==2.12.5",

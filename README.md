@@ -4,7 +4,8 @@
 [![Publish TestPyPI](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/publish-testpypi.yml/badge.svg?branch=main)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/publish-testpypi.yml)
 [![Publish PyPI](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/release.yml/badge.svg)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/release.yml)
 [![zizmor](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/zizmor.yml/badge.svg?branch=main)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/zizmor.yml)
-[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://github.com/thedevappsecguy/skill-scanner/blob/main/LICENSE)
+[![CodeQL](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/thedevappsecguy/skill-scanner/actions/workflows/github-code-scanning/codeql)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/thedevappsecguy/skill-scanner/blob/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/skill-scanner.svg)](https://pypi.org/project/skill-scanner/)
 [![Security Policy](https://img.shields.io/badge/security-policy-blue.svg)](https://github.com/thedevappsecguy/skill-scanner/blob/main/SECURITY.md)
 
@@ -200,6 +201,20 @@ Windows known-path sanity check:
 - analyzer failures (OpenAI or VirusTotal)
 - payload truncation when files are skipped due to the 400k-character AI payload limit
 - unreadable files excluded from payload construction
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, testing, and PR guidelines.
+
+## Roadmap (in progress)
+
+- [ ] Improve system prompt hardening to uncover more threat patterns
+- [ ] Support multiple providers (Gemini, Claude, others)
+- [ ] Baseline / suppression / false-positive management
+- [ ] Ollama / local LLM provider support
+- [ ] Configurable risk scoring
+- [ ] GitHub Actions template for automated scans
+- [ ] Improve fixtures to include realistic malicious skills
 
 ## Version bump workflow
 
