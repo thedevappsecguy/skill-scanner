@@ -13,7 +13,7 @@ dependencies = [
     "httpx==0.28.1",
     "pydantic==2.12.5",
     "rich==14.3.2",
-    "typer==0.24.0",
+    "typer==0.24.1",
 ]
 
 [project.optional-dependencies]
