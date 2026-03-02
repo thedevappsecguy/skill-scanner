@@ -4,7 +4,7 @@ version = "0.2.2"
 description = "Security scanner for AI agent skills and instruction artifacts"
 readme = "README.md"
 authors = [{ name = "skill-scanner" }]
-requires-python = ">=3.11"
+requires-python = "==3.14.3"
 license = "MIT"
 classifiers = [
     "License :: OSI Approved :: MIT License",
