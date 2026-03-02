@@ -96,3 +96,30 @@ def test_scan_with_vt_surfaces_error_context(monkeypatch, tmp_path: Path) -> Non
     assert result.report is None
     assert result.error is not None
     assert "cache lookup failed" in result.error.lower()
+
+
+def test_parse_vt_file_includes_detection_ratio_and_top_engines() -> None:
+    parsed = vt_analyzer._parse_vt_file(
+        {
+            "data": {
+                "attributes": {
+                    "last_analysis_stats": {
+                        "malicious": 2,
+                        "suspicious": 1,
+                        "harmless": 4,
+                        "undetected": 3,
+                    },
+                    "last_analysis_results": {
+                        "EngineA": {"category": "malicious", "result": "Trojan.Generic"},
+                        "EngineB": {"category": "suspicious", "result": "Riskware"},
+                        "EngineC": {"category": "harmless", "result": "clean"},
+                    },
+                }
+            }
+        },
+        sha256="abc123",
+    )
+
+    assert parsed.analysis_total == 10
+    assert parsed.detection_ratio == 0.3
+    assert parsed.top_detections == ["EngineA: Trojan.Generic", "EngineB: Riskware"]

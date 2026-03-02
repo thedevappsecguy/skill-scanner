@@ -4,9 +4,9 @@
     "config:best-practices",
     "helpers:pinGitHubActionDigests",
     "helpers:pinGitHubActionDigestsToSemver",
-    "schedule:weekly"
+    "schedule:weekly",
+    ":disableDependencyDashboard"
   ],
-  "dependencyDashboard": true,
   "minimumReleaseAge": "7 days",
   "rangeStrategy": "pin",
   "lockFileMaintenance": {
@@ -68,8 +68,7 @@
     {
       "matchUpdateTypes": [
         "major"
-      ],
-      "dependencyDashboardApproval": true
+      ]
     }
   ]
 }

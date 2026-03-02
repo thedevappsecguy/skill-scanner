@@ -31,6 +31,10 @@ def test_risk_increases_with_high_findings() -> None:
     scored = evaluate_risk(report)
     assert scored.score > 0
     assert scored.risk_level.value in {"medium", "high", "critical", "low"}
+    assert scored.ai_score > 0
+    assert scored.ai_risk_level.value in {"medium", "high", "critical", "low"}
+    assert scored.vt_score == 0.0
+    assert scored.vt_risk_level.value == "clean"
 
 
 def test_vt_source_findings_not_double_counted() -> None:
@@ -60,3 +64,7 @@ def test_vt_source_findings_not_double_counted() -> None:
     scored = evaluate_risk(report)
     # If VT finding were double-counted, this value would be > 12.
     assert scored.score == 7.2
+    assert scored.ai_score == 0.0
+    assert scored.ai_risk_level.value == "clean"
+    assert scored.vt_score == 12.0
+    assert scored.vt_risk_level.value == "low"

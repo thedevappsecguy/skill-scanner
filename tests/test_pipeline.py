@@ -6,6 +6,7 @@ from skill_scanner.analyzers import pipeline as pipeline_module
 from skill_scanner.analyzers.ai_analyzer import PayloadBuildResult
 from skill_scanner.analyzers.pipeline import run_scan
 from skill_scanner.discovery.finder import discover_targets
+from skill_scanner.models.findings import Category, Finding, Severity
 from skill_scanner.models.reports import AIReport, SkillReport, VTReport, VTScanResult
 from skill_scanner.models.targets import Platform, ScanTarget, Scope, TargetKind
 
@@ -71,6 +72,63 @@ def test_pipeline_passes_vt_context_to_ai(monkeypatch, fixture_root) -> None:
     report = run_scan(targets, provider=object(), vt_api_key="vt-key", enable_ai=True, enable_vt=True)
     assert report.scanned_targets == 1
     assert isinstance(captured.get("vt_report"), VTReport)
+
+
+def test_pipeline_drops_vt_only_ai_duplicates_without_file_evidence(monkeypatch, fixture_root) -> None:
+    targets = discover_targets(path=str(fixture_root / "clean_skill"), platform=Platform.ALL)
+
+    async def _fake_scan_with_vt(*_args, **_kwargs) -> VTScanResult:
+        return VTScanResult(
+            report=VTReport(
+                sha256="abc",
+                malicious=3,
+                suspicious=0,
+                harmless=0,
+                undetected=10,
+                analysis_total=13,
+                detection_ratio=3 / 13,
+                permalink="https://example.test/vt",
+            )
+        )
+
+    async def _fake_analyze_with_ai(*_args, **_kwargs):
+        return (
+            AIReport(
+                provider="openai",
+                model="gpt-5.2",
+                findings=[
+                    Finding(
+                        source="openai",
+                        category=Category.CONFIGURATION_RISK,
+                        severity=Severity.MEDIUM,
+                        title="VirusTotal context indicates malicious detections",
+                        description="VirusTotal flagged this archive with several engines.",
+                        recommendation="Review VirusTotal report.",
+                    ),
+                    Finding(
+                        source="openai",
+                        category=Category.HIDDEN_COMMANDS,
+                        severity=Severity.HIGH,
+                        title="Remote script execution instruction",
+                        description="The skill instructs users to paste an untrusted script into terminal.",
+                        file_path=str(targets[0].entry_path),
+                        line=9,
+                        recommendation="Replace with auditable install steps and integrity verification.",
+                    ),
+                ],
+            ),
+            PayloadBuildResult(payload="payload", included_files=1),
+        )
+
+    monkeypatch.setattr(pipeline_module, "scan_with_vt", _fake_scan_with_vt)
+    monkeypatch.setattr(pipeline_module, "analyze_with_ai", _fake_analyze_with_ai)
+
+    report = run_scan(targets, provider=object(), vt_api_key="vt-key", enable_ai=True, enable_vt=True)
+    target_report = report.reports[0]
+
+    assert len(target_report.ai_findings) == 1
+    assert target_report.ai_findings[0].title == "Remote script execution instruction"
+    assert any("removed 1 duplicate VirusTotal-only finding" in note for note in target_report.notes)
 
 
 def test_pipeline_parallelism_preserves_input_order(monkeypatch) -> None:

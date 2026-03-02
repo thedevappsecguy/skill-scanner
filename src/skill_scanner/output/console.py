@@ -14,8 +14,10 @@ def render_console_report(report: ScanReport, *, no_color: bool = False) -> None
     table.add_column("Scope")
     table.add_column("Risk")
     table.add_column("Score", justify="right")
+    table.add_column("AI", justify="right")
+    table.add_column("VT Risk", justify="right")
     table.add_column("Findings", justify="right")
-    table.add_column("VT", justify="right")
+    table.add_column("VT Hits", justify="right")
     table.add_column("Notes", justify="right")
 
     for item in report.reports:
@@ -28,6 +30,8 @@ def render_console_report(report: ScanReport, *, no_color: bool = False) -> None
             item.target.scope.value,
             item.risk_level.value.upper(),
             f"{item.score:.2f}",
+            f"{item.ai_risk_level.value.upper()} {item.ai_score:.2f}",
+            f"{item.vt_risk_level.value.upper()} {item.vt_score:.2f}",
             str(findings),
             str(vt_count),
             str(len(item.notes)),

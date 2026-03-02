@@ -65,10 +65,15 @@ def test_analyze_with_ai_includes_vt_context(tmp_path: Path) -> None:
         suspicious=0,
         harmless=0,
         undetected=5,
+        analysis_total=6,
+        detection_ratio=1 / 6,
         permalink="https://example.test/vt",
     )
 
     _, payload_result = asyncio.run(analyze_with_ai(target, provider, vt_report=vt_report))
     assert "## VIRUSTOTAL_CONTEXT" in provider.last_payload
+    assert "verdict: malicious" in provider.last_payload
+    assert "detections: 1/6" in provider.last_payload
+    assert "guidance: Use VT as corroborating evidence" in provider.last_payload
     assert "malicious: 1" in provider.last_payload
     assert payload_result.included_files == 1

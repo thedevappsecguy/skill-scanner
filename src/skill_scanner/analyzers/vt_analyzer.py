@@ -155,11 +155,48 @@ def _parse_vt_file(payload: dict[str, object], sha256: str) -> VTReport:
     stats = attrs.get("last_analysis_stats", {}) if isinstance(attrs, dict) else {}
     if not isinstance(stats, dict):
         stats = {}
+    results = attrs.get("last_analysis_results", {}) if isinstance(attrs, dict) else {}
+    if not isinstance(results, dict):
+        results = {}
+
+    malicious = int(stats.get("malicious", 0) or 0)
+    suspicious = int(stats.get("suspicious", 0) or 0)
+    harmless = int(stats.get("harmless", 0) or 0)
+    undetected = int(stats.get("undetected", 0) or 0)
+
+    analysis_total = 0
+    for value in stats.values():
+        if isinstance(value, bool):  # pragma: no cover - defensive safety net
+            continue
+        try:
+            analysis_total += int(value or 0)
+        except (TypeError, ValueError):  # pragma: no cover - defensive safety net
+            continue
+
+    detected = malicious + suspicious
+    detection_ratio = (detected / analysis_total) if analysis_total > 0 else 0.0
+
+    top_detections: list[str] = []
+    for engine_name in sorted(results.keys()):
+        engine_value = results.get(engine_name)
+        if not isinstance(engine_value, dict):
+            continue
+        category = str(engine_value.get("category") or "").lower()
+        if category not in {"malicious", "suspicious"}:
+            continue
+        verdict = str(engine_value.get("result") or category)
+        top_detections.append(f"{engine_name}: {verdict}")
+        if len(top_detections) >= 8:
+            break
+
     return VTReport(
         sha256=sha256,
-        malicious=int(stats.get("malicious", 0) or 0),
-        suspicious=int(stats.get("suspicious", 0) or 0),
-        harmless=int(stats.get("harmless", 0) or 0),
-        undetected=int(stats.get("undetected", 0) or 0),
+        malicious=malicious,
+        suspicious=suspicious,
+        harmless=harmless,
+        undetected=undetected,
+        analysis_total=analysis_total,
+        detection_ratio=detection_ratio,
+        top_detections=top_detections,
         permalink=f"https://www.virustotal.com/gui/file/{sha256}",
     )

@@ -61,6 +61,11 @@ def format_summary_report(report: ScanReport) -> str:
         lines.append("")
         lines.append(f"Target {index}: {item.target.entry_path}")
         lines.append(f"Risk: {item.risk_level.value.upper()} ({item.score:.2f})")
+        lines.append(
+            "Signals: "
+            f"ai={item.ai_risk_level.value.upper()} ({item.ai_score:.2f}), "
+            f"vt={item.vt_risk_level.value.upper()} ({item.vt_score:.2f})"
+        )
         total_findings = len(item.deterministic_findings) + len(item.ai_findings)
         lines.append(
             "Findings: "
@@ -77,9 +82,17 @@ def format_summary_report(report: ScanReport) -> str:
                 f"malicious={vt.malicious}, suspicious={vt.suspicious}, "
                 f"undetected={vt.undetected}, harmless={vt.harmless}"
             )
+            if vt.analysis_total > 0:
+                detected = vt.malicious + vt.suspicious
+                vt_line += f", detections={detected}/{vt.analysis_total} ({vt.detection_ratio * 100:.2f}%)"
             if vt.permalink:
                 vt_line += f" | {vt.permalink}"
             lines.append(vt_line)
+            if vt.top_detections:
+                sample = ", ".join(vt.top_detections[:3])
+                remaining = len(vt.top_detections) - 3
+                suffix = "" if remaining <= 0 else f", +{remaining} more"
+                lines.append(f"VirusTotal engines: {sample}{suffix}")
 
         if item.notes:
             lines.append("Notes:")
