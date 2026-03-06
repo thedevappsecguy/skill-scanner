@@ -13,6 +13,10 @@
 - OpenAI analysis
 - VirusTotal analysis
 
+## Architecture flow
+
+![skill-scanner flow](./docs/skill-scanner-flow.png)
+
 ## Requirements
 
 - Python 3.11+
