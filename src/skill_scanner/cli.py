@@ -248,7 +248,7 @@ def _check_openai(api_key: str | None, model: str) -> tuple[bool, str]:
     try:
         from openai import OpenAI
     except ImportError:
-        return False, "openai package is not installed (install skill-scanner[openai])"
+        return False, "openai package is unavailable; reinstall skill-scanner"
 
     try:
         client = OpenAI(api_key=api_key)

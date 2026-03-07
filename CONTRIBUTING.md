@@ -4,7 +4,7 @@ Thanks for helping improve the project! This guide keeps contributions quick and
 
 ## Getting set up
 - Install Python 3.11+ and [`uv`](https://docs.astral.sh/uv/).
-- Install dependencies: `uv sync --all-extras --group dev`.
+- Install dependencies: `uv sync --group dev`.
 - Run the CLI locally: `uv run skill-scanner --help`.
 
 ## Before you open a PR

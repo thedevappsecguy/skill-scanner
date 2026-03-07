@@ -52,7 +52,7 @@ def test_vt_source_findings_not_double_counted() -> None:
         deterministic_findings=[
             Finding(
                 source="virustotal",
-                category=Category.SUPPLY_CHAIN_RISK,
+                category=Category.SUPPLY_CHAIN,
                 severity=Severity.HIGH,
                 title="VT hit",
                 description="VT marked malicious",
