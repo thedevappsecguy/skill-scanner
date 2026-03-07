@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -185,6 +186,60 @@ def test_scan_passes_jobs_to_pipeline(monkeypatch, fixture_root) -> None:
     )
     assert result.exit_code == 0
     assert captured["jobs"] == 4
+    assert captured["progress_callback"] is None
+
+
+def test_scan_passes_progress_callback_when_terminal(monkeypatch, fixture_root) -> None:
+    monkeypatch.setattr(
+        cli_module,
+        "load_settings",
+        lambda **_: Settings(
+            provider="openai",
+            model="gpt-5.2",
+            openai_api_key="openai-key",
+            vt_api_key=None,
+        ),
+    )
+    monkeypatch.setattr(cli_module, "create_provider", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(cli_module, "_should_show_scan_progress", lambda *_args, **_kwargs: True)
+
+    def callback(_event) -> None:
+        return None
+
+    @contextmanager
+    def _fake_progress_context(**kwargs):
+        assert kwargs["enabled"] is True
+        assert kwargs["total_targets"] == 1
+        yield callback
+
+    monkeypatch.setattr(cli_module, "_scan_progress_context", _fake_progress_context)
+
+    captured: dict[str, object] = {}
+
+    def _fake_run_scan(targets, **kwargs):
+        captured.update(kwargs)
+        return ScanReport(
+            scanned_targets=len(targets),
+            reports=[],
+            summary={"critical": 0, "high": 0, "medium": 0, "low": 0, "clean": 0},
+        )
+
+    monkeypatch.setattr(cli_module, "run_scan", _fake_run_scan)
+
+    result = runner.invoke(
+        app,
+        [
+            "scan",
+            "--path",
+            str(fixture_root / "clean_skill"),
+            "--no-vt",
+            "--format",
+            "summary",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["progress_callback"] is callback
 
 
 def test_min_severity_filter_recomputes_score_and_summary() -> None:

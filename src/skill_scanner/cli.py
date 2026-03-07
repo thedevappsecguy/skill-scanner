@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
 import httpx
@@ -9,7 +10,7 @@ import typer
 from rich.console import Console
 
 from skill_scanner import __version__
-from skill_scanner.analyzers.pipeline import run_scan
+from skill_scanner.analyzers.pipeline import ProgressCallback, run_scan
 from skill_scanner.config import load_settings
 from skill_scanner.discovery.finder import discover_targets, discover_targets_with_diagnostics
 from skill_scanner.models.findings import Severity
@@ -17,6 +18,7 @@ from skill_scanner.models.reports import ScanReport, SkillReport
 from skill_scanner.models.targets import Platform, ScanTarget, Scope
 from skill_scanner.output.console import render_console_report
 from skill_scanner.output.json_export import export_json_report
+from skill_scanner.output.progress import ScanProgressDisplay
 from skill_scanner.output.sarif_export import export_sarif_report
 from skill_scanner.output.summary import render_summary_report
 from skill_scanner.providers import available_providers, create_provider
@@ -161,7 +163,12 @@ def scan(
     _configure_logging(verbose)
 
     selected_scopes = set(scope) if scope else {Scope.REPO, Scope.USER, Scope.SYSTEM, Scope.EXTENSION}
-    targets = discover_targets(path=path, platform=platform, scopes=selected_scopes)
+    show_progress = _should_show_scan_progress(format)
+    if show_progress:
+        with console.status("Discovering targets...", spinner="dots"):
+            targets = discover_targets(path=path, platform=platform, scopes=selected_scopes)
+    else:
+        targets = discover_targets(path=path, platform=platform, scopes=selected_scopes)
     if target:
         targets = _filter_targets(targets, target)
         if not targets:
@@ -197,16 +204,23 @@ def scan(
     if enable_ai:
         provider_impl = create_provider(settings.provider, settings.openai_api_key, settings.model)
 
-    report = run_scan(
-        targets,
-        provider=provider_impl,
-        vt_api_key=settings.vt_api_key if enable_vt else None,
+    with _scan_progress_context(
+        total_targets=len(targets),
         enable_ai=enable_ai,
         enable_vt=enable_vt,
-        vt_timeout_s=vt_timeout,
-        vt_poll_interval_s=vt_poll_interval,
-        jobs=jobs,
-    )
+        enabled=show_progress,
+    ) as progress_callback:
+        report = run_scan(
+            targets,
+            provider=provider_impl,
+            vt_api_key=settings.vt_api_key if enable_vt else None,
+            enable_ai=enable_ai,
+            enable_vt=enable_vt,
+            vt_timeout_s=vt_timeout,
+            vt_poll_interval_s=vt_poll_interval,
+            jobs=jobs,
+            progress_callback=progress_callback,
+        )
 
     if min_severity != Severity.INFO:
         _apply_min_severity_filter(report, min_severity)
@@ -257,6 +271,27 @@ def _check_openai(api_key: str | None, model: str) -> tuple[bool, str]:
         return False, f"OpenAI check failed: {exc}"
 
     return True, f"Model '{model}' is accessible"
+
+
+def _should_show_scan_progress(format: str) -> bool:
+    return console.is_terminal and format in {"table", "summary"}
+
+
+def _scan_progress_context(
+    *,
+    total_targets: int,
+    enable_ai: bool,
+    enable_vt: bool,
+    enabled: bool,
+) -> AbstractContextManager[ProgressCallback | None]:
+    if not enabled or total_targets <= 0:
+        return nullcontext(None)
+    return ScanProgressDisplay(
+        console=console,
+        total_targets=total_targets,
+        enable_ai=enable_ai,
+        enable_vt=enable_vt,
+    )
 
 
 def _check_vt(api_key: str) -> tuple[bool, str]:

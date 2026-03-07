@@ -3,16 +3,19 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import Counter
+from collections.abc import Callable
 
 from skill_scanner.analyzers.ai_analyzer import PayloadBuildResult, analyze_with_ai
 from skill_scanner.analyzers.vt_analyzer import scan_with_vt
 from skill_scanner.models.findings import Category, Finding, Severity
+from skill_scanner.models.progress import ScanPhase, ScanProgressEvent
 from skill_scanner.models.reports import AIReport, ScanReport, SkillReport, VTReport
 from skill_scanner.models.targets import ScanTarget
 from skill_scanner.providers.base import LLMProvider
 from skill_scanner.scoring.risk import evaluate_risk
 
 logger = logging.getLogger(__name__)
+ProgressCallback = Callable[[ScanProgressEvent], None]
 
 
 def run_scan(
@@ -25,6 +28,7 @@ def run_scan(
     vt_timeout_s: int = 300,
     vt_poll_interval_s: int = 10,
     jobs: int = 8,
+    progress_callback: ProgressCallback | None = None,
 ) -> ScanReport:
     return asyncio.run(
         run_scan_async(
@@ -36,6 +40,7 @@ def run_scan(
             vt_timeout_s=vt_timeout_s,
             vt_poll_interval_s=vt_poll_interval_s,
             jobs=jobs,
+            progress_callback=progress_callback,
         )
     )
 
@@ -50,6 +55,7 @@ async def run_scan_async(
     vt_timeout_s: int = 300,
     vt_poll_interval_s: int = 10,
     jobs: int = 8,
+    progress_callback: ProgressCallback | None = None,
 ) -> ScanReport:
     max_jobs = max(1, jobs)
     semaphore = asyncio.Semaphore(max_jobs)
@@ -65,12 +71,16 @@ async def run_scan_async(
                     enable_vt=enable_vt,
                     vt_timeout_s=vt_timeout_s,
                     vt_poll_interval_s=vt_poll_interval_s,
+                    progress_callback=progress_callback,
                 )
             except Exception as exc:  # pragma: no cover - defensive safety net
                 logger.exception("Unhandled scan failure for %s", target.entry_path)
-                return evaluate_risk(
+                _emit_progress(progress_callback, target, ScanPhase.FAILED)
+                evaluated = evaluate_risk(
                     SkillReport(target=target, notes=[f"Internal scan failure: {exc}"])
                 )
+                _emit_progress(progress_callback, target, ScanPhase.DONE)
+                return evaluated
 
     tasks = [asyncio.create_task(_bounded_scan(target)) for target in targets]
     reports = await asyncio.gather(*tasks)
@@ -94,14 +104,17 @@ async def _scan_target(
     enable_vt: bool,
     vt_timeout_s: int,
     vt_poll_interval_s: int,
+    progress_callback: ProgressCallback | None,
 ) -> SkillReport:
     logger.info("Scanning target: %s", target.entry_path)
+    _emit_progress(progress_callback, target, ScanPhase.START)
 
     deterministic: list[Finding] = []
     notes: list[str] = []
 
     vt_report: VTReport | None = None
     if enable_vt and vt_api_key:
+        _emit_progress(progress_callback, target, ScanPhase.VT_STARTED)
         vt_result = await scan_with_vt(
             target,
             vt_api_key,
@@ -112,9 +125,11 @@ async def _scan_target(
         if vt_result.error:
             notes.append(f"VirusTotal: {vt_result.error}")
         deterministic.extend(_vt_findings(vt_report))
+        _emit_progress(progress_callback, target, ScanPhase.VT_DONE)
 
     ai_report = AIReport(provider="disabled", model="n/a", findings=[])
     if enable_ai and provider is not None:
+        _emit_progress(progress_callback, target, ScanPhase.AI_STARTED)
         ai_report, payload_result = await analyze_with_ai(target, provider, vt_report=vt_report)
         notes.extend(_payload_notes(payload_result))
         filtered_ai_findings, dropped_count = _filter_vt_only_ai_findings(ai_report.findings, vt_report)
@@ -126,7 +141,9 @@ async def _scan_target(
             ai_report = ai_report.model_copy(update={"findings": filtered_ai_findings})
         if ai_report.error:
             notes.append(f"AI analysis: {ai_report.error}")
+        _emit_progress(progress_callback, target, ScanPhase.AI_DONE)
 
+    _emit_progress(progress_callback, target, ScanPhase.SCORING)
     report = SkillReport(
         target=target,
         deterministic_findings=deterministic,
@@ -143,7 +160,21 @@ async def _scan_target(
         len(evaluated.deterministic_findings) + len(evaluated.ai_findings),
         len(evaluated.notes),
     )
+    _emit_progress(progress_callback, target, ScanPhase.DONE)
     return evaluated
+
+
+def _emit_progress(
+    progress_callback: ProgressCallback | None,
+    target: ScanTarget,
+    phase: ScanPhase,
+) -> None:
+    if progress_callback is None:
+        return
+    try:
+        progress_callback(ScanProgressEvent(target_path=target.entry_path, phase=phase))
+    except Exception:  # pragma: no cover - progress should never fail a scan
+        logger.debug("Progress callback failed for %s phase=%s", target.entry_path, phase.value, exc_info=True)
 
 
 def _payload_notes(payload_result: PayloadBuildResult) -> list[str]:
