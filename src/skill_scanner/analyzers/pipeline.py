@@ -180,7 +180,7 @@ def _vt_findings(vt_report: object) -> list[Finding]:
         findings.append(
             Finding(
                 source="virustotal",
-                category=Category.SUPPLY_CHAIN_RISK,
+                category=Category.SUPPLY_CHAIN,
                 severity=severity,
                 title="VirusTotal detected malicious verdicts",
                 description=(
@@ -197,7 +197,7 @@ def _vt_findings(vt_report: object) -> list[Finding]:
         findings.append(
             Finding(
                 source="virustotal",
-                category=Category.SUPPLY_CHAIN_RISK,
+                category=Category.SUPPLY_CHAIN,
                 severity=Severity.MEDIUM,
                 title="VirusTotal detected suspicious verdicts",
                 description=(

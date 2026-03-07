@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+from skill_scanner.models.findings import Category, observed_pattern_specs_for_prompt
 from skill_scanner.models.targets import Platform, ScanTarget, Scope, TargetKind
 from skill_scanner.providers import openai_provider as openai_provider_module
 from skill_scanner.providers.openai_provider import OpenAIProvider
@@ -124,3 +125,48 @@ def test_openai_provider_retries_status_500(monkeypatch) -> None:
 
     assert completions.calls == 2
     assert report.error is None
+
+
+def test_system_prompt_includes_observed_pattern_descriptions() -> None:
+    prompt = openai_provider_module.SYSTEM_PROMPT
+    for item in observed_pattern_specs_for_prompt():
+        assert f"- {item.category.value}: {item.description}" in prompt
+    assert "mcp_attack" not in prompt
+    assert "mcp_config" not in prompt
+    assert "best-practice remediation" in prompt
+    assert "specific to instruction files and skills" in prompt
+    assert 'return `{ "findings": [] }`' in prompt
+
+
+def test_openai_provider_maps_legacy_category_aliases(monkeypatch) -> None:
+    monkeypatch.setattr(openai_provider_module, "async_retry_with_backoff", _fast_retry)
+    provider, _ = _provider(
+        [
+            _Response(
+                '{"findings": [{"category": "data_exfiltration", "severity": "high", "title": "exfil", "description": "legacy alias"}]}'
+            )
+        ]
+    )
+
+    report = asyncio.run(provider.analyze(_target(), "payload"))
+
+    assert report.error is None
+    assert len(report.findings) == 1
+    assert report.findings[0].category == Category.EXFILTRATION
+
+
+def test_openai_provider_unknown_category_falls_back_to_configuration_risk(monkeypatch) -> None:
+    monkeypatch.setattr(openai_provider_module, "async_retry_with_backoff", _fast_retry)
+    provider, _ = _provider(
+        [
+            _Response(
+                '{"findings": [{"category": "unexpected_category", "severity": "medium", "title": "unknown", "description": "unknown"}]}'
+            )
+        ]
+    )
+
+    report = asyncio.run(provider.analyze(_target(), "payload"))
+
+    assert report.error is None
+    assert len(report.findings) == 1
+    assert report.findings[0].category == Category.CONFIGURATION_RISK

@@ -4,34 +4,54 @@ import json
 import logging
 from typing import Any
 
-from skill_scanner.models.findings import Category, Finding, Severity
+from skill_scanner.models.findings import (
+    Finding,
+    Severity,
+    canonicalize_category,
+    observed_pattern_specs_for_prompt,
+)
 from skill_scanner.models.reports import AIReport
 from skill_scanner.models.targets import ScanTarget
 from skill_scanner.providers.base import LLMProvider, register_provider
 from skill_scanner.utils.retry import RetryableError, async_retry_with_backoff
 
-SYSTEM_PROMPT = """
-You are a security reviewer for AI agent artifacts.
-Return strict JSON with key `findings` as a list of objects with:
-category,severity,title,description,file_path,line,recommendation,cwe.
-Valid severities: critical,high,medium,low,info.
-Valid categories: prompt_injection,data_exfiltration,hidden_commands,permission_escalation,supply_chain_risk,filesystem_attack,social_engineering,credential_harvesting,malformed_skill,configuration_risk.
-When `VIRUSTOTAL_CONTEXT` is present:
-- Use it as corroborating evidence to prioritize and adjust severity/confidence of file-backed findings.
-- Prefer findings that reference concrete risky content in the payload (`file_path` and `line` when possible).
-- Do not emit a standalone finding that only repeats VT verdict counts or permalink without additional file-level evidence.
-Do not return prose outside JSON.
-""".strip()
+
+def _build_system_prompt() -> str:
+    category_lines = "\n".join(
+        f"- {item.category.value}: {item.description}"
+        for item in observed_pattern_specs_for_prompt()
+    )
+    return (
+        "You are a security reviewer for AI agent artifacts.\n"
+        "Return strict JSON with key `findings` as a list of objects with:\n"
+        "category,severity,title,description,file_path,line,recommendation,cwe.\n"
+        "Valid severities: critical,high,medium,low,info.\n"
+        "Observed patterns (category values):\n"
+        f"{category_lines}\n"
+        "For each finding, include actionable best-practice remediation in `recommendation` based on that finding's evidence.\n"
+        "Remediation must be specific to instruction files and skills, not generic advice.\n"
+        "Prefer concrete controls such as command/tool allowlists, explicit user confirmation for execution/network actions, "
+        "least-privilege permissions, domain allowlisting, pinned versions, and checksum/signature verification.\n"
+        "When `VIRUSTOTAL_CONTEXT` is present:\n"
+        "- Use it as corroborating evidence to prioritize and adjust severity/confidence of file-backed findings.\n"
+        "- Prefer findings that reference concrete risky content in the payload (`file_path` and `line` when possible).\n"
+        "- Do not emit a standalone finding that only repeats VT verdict counts or permalink without additional file-level evidence.\n"
+        "If no actionable risks are present, return `{ \"findings\": [] }`.\n"
+        "Do not return prose outside JSON."
+    )
+
+
+SYSTEM_PROMPT = _build_system_prompt()
 
 logger = logging.getLogger(__name__)
 
 
 def _normalize_finding(item: dict[str, Any]) -> Finding:
-    category = item.get("category", "configuration_risk")
-    severity = item.get("severity", "low")
+    category = canonicalize_category(str(item.get("category", "configuration_risk")))
+    severity = str(item.get("severity", "low"))
     return Finding(
         source="openai",
-        category=Category(category),
+        category=category,
         severity=Severity(severity),
         title=str(item.get("title", "AI finding")),
         description=str(item.get("description", "")),
@@ -50,17 +70,14 @@ class OpenAIProvider(LLMProvider):
         super().__init__(api_key=api_key, model=model)
         if not api_key:
             raise ValueError("OPENAI_API_KEY is required for OpenAI analysis")
-        try:
-            from openai import (
-                APIConnectionError,
-                APIStatusError,
-                APITimeoutError,
-                AsyncOpenAI,
-                InternalServerError,
-                RateLimitError,
-            )
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("Install optional dependency: pip install 'skill-scanner[openai]'") from exc
+        from openai import (
+            APIConnectionError,
+            APIStatusError,
+            APITimeoutError,
+            AsyncOpenAI,
+            InternalServerError,
+            RateLimitError,
+        )
 
         self._client = AsyncOpenAI(api_key=api_key)
         self._api_status_error_type = APIStatusError

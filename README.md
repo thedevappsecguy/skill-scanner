@@ -23,10 +23,18 @@
 - [`uv`](https://docs.astral.sh/uv/)
 - OpenAI and/or VirusTotal API key (at least one)
 
+## Install (from PyPI)
+
+```bash
+uv pip install skill-scanner
+```
+
+Base install includes both OpenAI and VirusTotal support.
+
 ## Install (from source)
 
 ```bash
-uv sync --all-extras --group dev
+uv sync --group dev
 ```
 
 Run with:
@@ -212,7 +220,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, testing, and PR guidelines.
 
 ## Roadmap (in progress)
 
-- [ ] Improve system prompt hardening to uncover more threat patterns
+- [x] Improve system prompt hardening to uncover more threat patterns
 - [ ] Support multiple providers (Gemini, Claude, others)
 - [ ] Baseline / suppression / false-positive management
 - [ ] Ollama / local LLM provider support
@@ -229,7 +237,7 @@ Use `uv version` so version updates stay command-driven and lock state remains c
 uv version --bump patch
 
 # Or set an explicit version
-uv version 0.2.0
+uv version 0.3.0
 ```
 
 Notes:

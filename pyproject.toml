@@ -1,7 +1,7 @@
 [project]
 name = "skill-scanner"
-version = "0.2.2"
-description = "Security scanner for AI agent skills and instruction artifacts"
+version = "0.2.3"
+description = "Security scanner for detecting and remediating malicous AI agent skills and instruction artifacts"
 readme = "README.md"
 authors = [{ name = "skill-scanner" }]
 requires-python = ">=3.11"
@@ -11,15 +11,11 @@ classifiers = [
 ]
 dependencies = [
     "httpx==0.28.1",
+    "openai==2.21.0",
     "pydantic==2.12.5",
     "rich==14.3.3",
     "typer==0.24.1",
 ]
-
-[project.optional-dependencies]
-openai = ["openai==2.21.0"]
-virustotal = ["vt-py==0.22.0"]
-all = ["openai==2.21.0", "vt-py==0.22.0"]
 
 [dependency-groups]
 dev = [

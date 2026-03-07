@@ -39,6 +39,10 @@ def test_pipeline_adds_vt_derived_findings(monkeypatch, fixture_root) -> None:
         finding.source == "virustotal"
         for finding in report.reports[0].deterministic_findings
     )
+    assert any(
+        finding.category == Category.SUPPLY_CHAIN
+        for finding in report.reports[0].deterministic_findings
+    )
 
 
 def test_pipeline_passes_vt_context_to_ai(monkeypatch, fixture_root) -> None:
@@ -107,7 +111,7 @@ def test_pipeline_drops_vt_only_ai_duplicates_without_file_evidence(monkeypatch,
                     ),
                     Finding(
                         source="openai",
-                        category=Category.HIDDEN_COMMANDS,
+                        category=Category.COMMAND_EXECUTION,
                         severity=Severity.HIGH,
                         title="Remote script execution instruction",
                         description="The skill instructs users to paste an untrusted script into terminal.",

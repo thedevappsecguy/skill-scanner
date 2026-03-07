@@ -61,8 +61,7 @@
       "matchPackageNames": [
         "httpx",
         "openai",
-        "typer",
-        "vt-py"
+        "typer"
       ]
     },
     {
