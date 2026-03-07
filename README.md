@@ -140,6 +140,7 @@ Reference:
 - `sarif`
 
 You can write output to a file with `--output <path>`.
+Interactive `table` and `summary` scans show a live Rich progress bar while targets are being analyzed.
 
 ## Useful commands
 
