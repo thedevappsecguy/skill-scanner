@@ -10,7 +10,7 @@
 [![Security Policy](https://img.shields.io/badge/security-policy-blue.svg)](https://github.com/thedevappsecguy/skill-scanner/blob/main/SECURITY.md)
 
 `skill-scanner` reviews AI skill and instruction artifacts for security risk using:
-- OpenAI analysis
+- LiteLLM-based AI analysis
 - VirusTotal analysis
 
 ## Architecture flow
@@ -21,7 +21,7 @@
 
 - Python 3.11+
 - [`uv`](https://docs.astral.sh/uv/)
-- OpenAI and/or VirusTotal API key (at least one)
+- LiteLLM-compatible LLM configuration and/or VirusTotal API key (at least one analyzer)
 
 ## Install (from PyPI)
 
@@ -29,7 +29,7 @@
 uv pip install skill-scanner
 ```
 
-Base install includes both OpenAI and VirusTotal support.
+Base install includes LiteLLM-based AI analysis and VirusTotal support.
 
 ## Install (from source)
 
@@ -94,42 +94,128 @@ uv run skill-scanner doctor
 # Run live API checks (fails non-zero if checks fail)
 uv run skill-scanner doctor --check
 
-# Run a combined scan (if both keys are configured)
+# Run a scan (with whichever analyzers are configured)
 uv run skill-scanner scan --format summary
 ```
 
-## Key configuration and analyzer selection
+## Configuration
 
 `scan` requires at least one analyzer enabled.
 
-- If only `OPENAI_API_KEY` is available, AI runs and VT is disabled.
+- There is no built-in model default. Set `SKILLSCAN_MODEL` explicitly or pass `--model`.
+- If `SKILLSCAN_MODEL` plus either `SKILLSCAN_API_KEY` or `SKILLSCAN_BASE_URL` is available, AI runs.
 - If only `VT_API_KEY` is available, VT runs and AI is disabled.
-- If both keys are available, VT findings are included and VT context is passed into AI analysis.
+- If both AI config and `VT_API_KEY` are available, both analyzers run and VT context is passed into AI analysis.
 - You can disable either analyzer with `--no-ai` or `--no-vt`.
-- If no model is configured, `gpt-5.2` is used as a fallback model.
+- AI analysis requires an explicit `SKILLSCAN_MODEL` or `--model` value.
 
-Use `doctor --check` to verify the provider/key/model connectivity.
+Use `doctor --check` to verify model/API/base URL connectivity.
+Use [`models.litellm.ai`](https://models.litellm.ai/) to choose a supported LiteLLM model string.
 
-## API key safety
+Supported configuration paths:
 
-Use 1Password secret references instead of plaintext secrets:
+1. Environment variables:
 
 ```bash
-OPENAI_API_KEY=op://Developer/OpenAI/api_key
+export SKILLSCAN_MODEL=openai/gpt-5.4
+export SKILLSCAN_API_KEY=your-llm-key
+export VT_API_KEY=your-vt-key
+uv run skill-scanner scan --format summary
+```
+
+2. Local or user config file:
+
+- project-local: `./skill-scanner.toml`
+- user-level: `~/.config/skill-scanner/config.toml`
+
+```toml
+model = "openai/gpt-5.4"
+api_key = "your-llm-key"
+vt_api_key = "your-vt-key"
+```
+
+Local model config example:
+
+```toml
+model = "ollama/llama3.1"
+base_url = "http://localhost:11434"
+```
+
+3. CLI overrides for a single run:
+
+```bash
+uv run skill-scanner scan \
+  --model openai/gpt-5.4 \
+  --api-key "$SKILLSCAN_API_KEY" \
+  --format summary
+```
+
+Hosted model env example:
+
+```bash
+SKILLSCAN_MODEL=openai/gpt-5.4
+SKILLSCAN_API_KEY=op://Developer/LLM/api_key
 VT_API_KEY=op://Developer/VirusTotal/api_key
 ```
 
-Run the scanner through 1Password CLI so references are resolved at runtime:
+Local model example:
+
+```bash
+SKILLSCAN_MODEL=ollama/llama3.1
+SKILLSCAN_BASE_URL=http://localhost:11434
+```
+
+## 1Password setup
+
+Recommended approach: keep secrets out of `skill-scanner.toml` and store them as 1Password secret references in `.env`.
+
+Example `.env`:
+
+```bash
+SKILLSCAN_MODEL=openai/gpt-5.4
+SKILLSCAN_API_KEY=op://Developer/LLM/api_key
+VT_API_KEY=op://Developer/VirusTotal/api_key
+```
+
+Run the scanner through 1Password CLI so those references are resolved at runtime:
 
 ```bash
 op run --env-file=.env -- uv run skill-scanner scan --format summary
 ```
 
+To verify configuration before scanning:
+
+```bash
+op run --env-file=.env -- uv run skill-scanner doctor --check
+```
+
+If you prefer shell exports instead of an env file:
+
+```bash
+export SKILLSCAN_MODEL=openai/gpt-5.4
+export SKILLSCAN_API_KEY="$(op read 'op://Developer/LLM/api_key')"
+export VT_API_KEY="$(op read 'op://Developer/VirusTotal/api_key')"
+uv run skill-scanner scan --format summary
+```
+
+Important:
+- `skill-scanner` does not auto-load `.env` files on its own.
+- `op://...` references are resolved when you use `op run` or `op read`.
+- If you want to keep secrets in a config template, render it first with `op inject`; do not commit the rendered file.
+
 Security best practice:
 - Prefer a 1Password Service Account scoped to only the vault/items required for scanning (least privilege).
 
+## LiteLLM privacy
+
+- `skill-scanner` disables LiteLLM telemetry before making SDK calls.
+- `skill-scanner` clears LiteLLM callback hooks in its SDK integration path.
+- `models.litellm.ai` is documentation for choosing model strings; the package does not query or sync it at runtime.
+
 Reference:
 - https://developer.1password.com/docs/cli/secret-references/
+- https://developer.1password.com/docs/cli/reference/commands/run/
+- https://developer.1password.com/docs/service-accounts/
 
 ## Output formats
 
@@ -211,7 +297,7 @@ Windows known-path sanity check:
 
 `scan` now surfaces per-target notes in table and summary output, including:
 
-- analyzer failures (OpenAI or VirusTotal)
+- analyzer failures (LLM or VirusTotal)
 - payload truncation when files are skipped due to the 400k-character AI payload limit
 - unreadable files excluded from payload construction
 
@@ -222,9 +308,9 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, testing, and PR guidelines.
 ## Roadmap (in progress)
 
 - [x] Improve system prompt hardening to uncover more threat patterns
-- [ ] Support multiple providers (Gemini, Claude, others)
+- [x] Support multiple providers via LiteLLM model strings
 - [ ] Baseline / suppression / false-positive management
-- [ ] Ollama / local LLM provider support
+- [x] Ollama / local LLM provider support via LiteLLM `base_url`
 - [ ] Configurable risk scoring
 - [ ] GitHub Actions template for automated scans
 - [ ] Improve fixtures to include realistic malicious skills

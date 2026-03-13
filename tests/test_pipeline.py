@@ -99,8 +99,8 @@ def test_pipeline_drops_vt_only_ai_duplicates_without_file_evidence(monkeypatch,
     async def _fake_analyze_with_ai(*_args, **_kwargs):
         return (
             AIReport(
-                provider="openai",
-                model="gpt-5.2",
+                provider="litellm",
+                model="openai/gpt-5.4",
                 findings=[
                     Finding(
                         source="openai",
@@ -166,7 +166,7 @@ def test_pipeline_adds_notes_for_truncation_and_ai_errors(monkeypatch, fixture_r
 
     async def _fake_analyze_with_ai(*_args, **_kwargs):
         return (
-            AIReport(provider="openai", model="gpt-5.2", findings=[], error="mock failure"),
+            AIReport(provider="litellm", model="openai/gpt-5.4", findings=[], error="mock failure"),
             PayloadBuildResult(
                 payload="payload",
                 included_files=1,
@@ -197,7 +197,7 @@ def test_pipeline_emits_progress_events_for_target_phases(monkeypatch, fixture_r
 
     async def _fake_analyze_with_ai(*_args, **_kwargs):
         return (
-            AIReport(provider="openai", model="gpt-5.2", findings=[]),
+            AIReport(provider="litellm", model="openai/gpt-5.4", findings=[]),
             PayloadBuildResult(payload="payload", included_files=1),
         )
 

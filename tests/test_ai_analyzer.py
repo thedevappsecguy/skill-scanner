@@ -38,7 +38,7 @@ class _RecordingProvider(LLMProvider):
     name = "test"
 
     def __init__(self) -> None:
-        super().__init__(api_key="test-key", model="test-model")
+        super().__init__(api_key="test-key", model="test-model", base_url=None)
         self.last_payload = ""
 
     async def analyze(self, target: ScanTarget, payload: str) -> AIReport:

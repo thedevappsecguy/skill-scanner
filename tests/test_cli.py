@@ -30,16 +30,18 @@ def _scan_target(entry_path: str) -> ScanTarget:
 def test_providers_command() -> None:
     result = runner.invoke(app, ["providers"])
     assert result.exit_code == 0
-    assert "openai" in result.stdout
+    assert "LiteLLM model strings" in result.stdout
+    assert "https://models.litellm.ai/" in result.stdout
 
 
 def test_doctor_command() -> None:
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 0
-    assert "provider=" in result.stdout
-    assert "OPENAI_API_KEY" in result.stdout
+    assert "model=" in result.stdout
+    assert "SKILLSCAN_API_KEY" in result.stdout
+    assert "SKILLSCAN_BASE_URL" in result.stdout
     assert "VT_API_KEY" in result.stdout
-    assert "Model fallback" in result.stdout
+    assert "explicit SKILLSCAN_MODEL" in result.stdout
 
 
 def test_doctor_check_success(monkeypatch) -> None:
@@ -47,37 +49,35 @@ def test_doctor_check_success(monkeypatch) -> None:
         cli_module,
         "load_settings",
         lambda **_: Settings(
-            provider="openai",
-            model="gpt-5.2",
-            openai_api_key="openai-key",
+            model="openai/gpt-5.4",
+            api_key="llm-key",
             vt_api_key="vt-key",
         ),
     )
-    monkeypatch.setattr(cli_module, "_check_openai", lambda *_args, **_kwargs: (True, "ok"))
+    monkeypatch.setattr(cli_module, "_check_llm", lambda *_args, **_kwargs: (True, "ok"))
     monkeypatch.setattr(cli_module, "_check_vt", lambda *_args, **_kwargs: (True, "ok"))
 
     result = runner.invoke(app, ["doctor", "--check"])
     assert result.exit_code == 0
-    assert "OpenAI check: PASS" in result.stdout
+    assert "LLM check: PASS" in result.stdout
     assert "VirusTotal check: PASS" in result.stdout
 
 
-def test_doctor_check_fails_on_openai_error(monkeypatch) -> None:
+def test_doctor_check_fails_on_llm_error(monkeypatch) -> None:
     monkeypatch.setattr(
         cli_module,
         "load_settings",
         lambda **_: Settings(
-            provider="openai",
-            model="gpt-5.2",
-            openai_api_key="bad-key",
+            model="openai/gpt-5.4",
+            api_key="bad-key",
             vt_api_key=None,
         ),
     )
-    monkeypatch.setattr(cli_module, "_check_openai", lambda *_args, **_kwargs: (False, "invalid"))
+    monkeypatch.setattr(cli_module, "_check_llm", lambda *_args, **_kwargs: (False, "invalid"))
 
     result = runner.invoke(app, ["doctor", "--check"])
     assert result.exit_code == 1
-    assert "OpenAI check: FAIL" in result.stdout
+    assert "LLM check: FAIL" in result.stdout
 
 
 def test_discover_scope_user_passed_to_discovery(monkeypatch) -> None:
@@ -113,9 +113,8 @@ def test_scan_summary_format_output(monkeypatch, fixture_root) -> None:
         cli_module,
         "load_settings",
         lambda **_: Settings(
-            provider="openai",
-            model="gpt-5.2",
-            openai_api_key="openai-key",
+            model="openai/gpt-5.4",
+            api_key="llm-key",
             vt_api_key=None,
         ),
     )
@@ -151,9 +150,8 @@ def test_scan_passes_jobs_to_pipeline(monkeypatch, fixture_root) -> None:
         cli_module,
         "load_settings",
         lambda **_: Settings(
-            provider="openai",
-            model="gpt-5.2",
-            openai_api_key="openai-key",
+            model="openai/gpt-5.4",
+            api_key="llm-key",
             vt_api_key=None,
         ),
     )
@@ -194,9 +192,8 @@ def test_scan_passes_progress_callback_when_terminal(monkeypatch, fixture_root) 
         cli_module,
         "load_settings",
         lambda **_: Settings(
-            provider="openai",
-            model="gpt-5.2",
-            openai_api_key="openai-key",
+            model="openai/gpt-5.4",
+            api_key="llm-key",
             vt_api_key=None,
         ),
     )
@@ -287,11 +284,11 @@ def test_scan_with_only_vt_key_disables_ai_with_hint(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(
         cli_module,
         "load_settings",
-        lambda **_: Settings(provider="openai", model="gpt-5.2", openai_api_key=None, vt_api_key="vt-key"),
+        lambda **_: Settings(model="openai/gpt-5.4", api_key=None, vt_api_key="vt-key"),
     )
 
     def _unexpected_provider(*_args, **_kwargs):
-        raise AssertionError("create_provider should not be called when OPENAI_API_KEY is missing")
+        raise AssertionError("create_provider should not be called when generic LLM config is missing")
 
     monkeypatch.setattr(cli_module, "create_provider", _unexpected_provider)
 
@@ -309,19 +306,19 @@ def test_scan_with_only_vt_key_disables_ai_with_hint(monkeypatch, tmp_path) -> N
 
     result = runner.invoke(app, ["scan", "--path", str(skill), "--format", "summary"])
     assert result.exit_code == 0
-    assert "OPENAI_API_KEY is missing" in result.stdout
+    assert "no LLM API key or base URL is configured" in result.stdout
     assert captured["enable_ai"] is False
     assert captured["enable_vt"] is True
 
 
-def test_scan_with_only_openai_key_disables_vt_with_hint(monkeypatch, tmp_path) -> None:
+def test_scan_with_only_llm_key_disables_vt_with_hint(monkeypatch, tmp_path) -> None:
     skill = tmp_path / "SKILL.md"
     skill.write_text("---\nname: test-skill\ndescription: demo\n---\nbody\n", encoding="utf-8")
 
     monkeypatch.setattr(
         cli_module,
         "load_settings",
-        lambda **_: Settings(provider="openai", model="gpt-5.2", openai_api_key="openai-key", vt_api_key=None),
+        lambda **_: Settings(model="openai/gpt-5.4", api_key="llm-key", vt_api_key=None),
     )
 
     monkeypatch.setattr(cli_module, "create_provider", lambda *_args, **_kwargs: object())
@@ -345,6 +342,40 @@ def test_scan_with_only_openai_key_disables_vt_with_hint(monkeypatch, tmp_path) 
     assert captured["enable_vt"] is False
 
 
+def test_scan_with_local_base_url_and_no_api_key_keeps_ai_enabled(monkeypatch, tmp_path) -> None:
+    skill = tmp_path / "SKILL.md"
+    skill.write_text("---\nname: test-skill\ndescription: demo\n---\nbody\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        cli_module,
+        "load_settings",
+        lambda **_: Settings(
+            model="ollama/llama3.1",
+            api_key=None,
+            base_url="http://localhost:11434",
+            vt_api_key=None,
+        ),
+    )
+    monkeypatch.setattr(cli_module, "create_provider", lambda *_args, **_kwargs: object())
+
+    captured: dict[str, object] = {}
+
+    def _fake_run_scan(targets, **kwargs):
+        captured.update(kwargs)
+        return ScanReport(
+            scanned_targets=len(targets),
+            reports=[],
+            summary={"critical": 0, "high": 0, "medium": 0, "low": 0, "clean": 0},
+        )
+
+    monkeypatch.setattr(cli_module, "run_scan", _fake_run_scan)
+
+    result = runner.invoke(app, ["scan", "--path", str(skill), "--format", "summary"])
+    assert result.exit_code == 0
+    assert captured["enable_ai"] is True
+    assert captured["enable_vt"] is False
+
+
 def test_scan_fails_when_no_analyzers_enabled_for_network(monkeypatch, tmp_path) -> None:
     skill = tmp_path / "SKILL.md"
     skill.write_text("---\nname: test-skill\ndescription: demo\n---\nbody\n", encoding="utf-8")
@@ -352,7 +383,7 @@ def test_scan_fails_when_no_analyzers_enabled_for_network(monkeypatch, tmp_path)
     monkeypatch.setattr(
         cli_module,
         "load_settings",
-        lambda **_: Settings(provider="openai", model="gpt-5.2", openai_api_key=None, vt_api_key=None),
+        lambda **_: Settings(model="openai/gpt-5.4", api_key=None, vt_api_key=None),
     )
 
     def _unexpected_run_scan(*_args, **_kwargs):
@@ -396,7 +427,7 @@ def test_scan_target_filters_discovered_entries(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         cli_module,
         "load_settings",
-        lambda **_: Settings(provider="openai", model="gpt-5.2", openai_api_key="openai-key", vt_api_key=None),
+        lambda **_: Settings(model="openai/gpt-5.4", api_key="llm-key", vt_api_key=None),
     )
     monkeypatch.setattr(cli_module, "create_provider", lambda *_args, **_kwargs: object())
 

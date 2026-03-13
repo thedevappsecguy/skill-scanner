@@ -1,17 +1,13 @@
-"""Provider registry."""
+"""Provider exports."""
 
 from skill_scanner.providers.base import (
     LLMProvider,
-    available_providers,
     create_provider,
-    register_provider,
 )
-from skill_scanner.providers.openai_provider import OpenAIProvider
+from skill_scanner.providers.litellm_provider import LiteLLMProvider
 
 __all__ = [
     "LLMProvider",
-    "OpenAIProvider",
-    "available_providers",
+    "LiteLLMProvider",
     "create_provider",
-    "register_provider",
 ]
