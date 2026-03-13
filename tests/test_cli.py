@@ -31,7 +31,7 @@ def test_providers_command() -> None:
     result = runner.invoke(app, ["providers"])
     assert result.exit_code == 0
     assert "LiteLLM model strings" in result.stdout
-    assert "https://models.litellm.ai/" in result.stdout
+    assert "Catalog: https://models.litellm.ai/" in result.stdout.splitlines()
 
 
 def test_doctor_command() -> None:
