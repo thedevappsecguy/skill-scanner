@@ -10,7 +10,7 @@
 [![Security Policy](https://img.shields.io/badge/security-policy-blue.svg)](https://github.com/thedevappsecguy/skill-scanner/blob/main/SECURITY.md)
 
 `skill-scanner` reviews AI skill and instruction artifacts for security risk using:
-- LiteLLM-based AI analysis
+- LLM analysis
 - VirusTotal analysis
 
 ## Architecture flow
@@ -21,7 +21,7 @@
 
 - Python 3.11+
 - [`uv`](https://docs.astral.sh/uv/)
-- LiteLLM-compatible LLM configuration and/or VirusTotal API key (at least one analyzer)
+- LiteLLM-compatible model configuration and/or VirusTotal API key (at least one analyzer)
 
 ## Install (from PyPI)
 
@@ -29,7 +29,7 @@
 uv pip install skill-scanner
 ```
 
-Base install includes LiteLLM-based AI analysis and VirusTotal support.
+Base install includes LLM analysis and VirusTotal support.
 
 ## Install (from source)
 
@@ -103,11 +103,11 @@ uv run skill-scanner scan --format summary
 `scan` requires at least one analyzer enabled.
 
 - There is no built-in model default. Set `SKILLSCAN_MODEL` explicitly or pass `--model`.
-- If `SKILLSCAN_MODEL` plus either `SKILLSCAN_API_KEY` or `SKILLSCAN_BASE_URL` is available, AI runs.
-- If only `VT_API_KEY` is available, VT runs and AI is disabled.
-- If both AI config and `VT_API_KEY` are available, both analyzers run and VT context is passed into AI analysis.
+- If `SKILLSCAN_MODEL` plus either `SKILLSCAN_API_KEY` or `SKILLSCAN_BASE_URL` is available, LLM analysis runs.
+- If only `VT_API_KEY` is available, VT runs and LLM analysis is disabled.
+- If both LLM config and `VT_API_KEY` are available, both analyzers run and VT context is passed into the LLM analysis.
 - You can disable either analyzer with `--no-ai` or `--no-vt`.
-- AI analysis requires an explicit `SKILLSCAN_MODEL` or `--model` value.
+- LLM analysis requires an explicit `SKILLSCAN_MODEL` or `--model` value.
 
 Use `doctor --check` to verify model/API/base URL connectivity.
 Use [`models.litellm.ai`](https://models.litellm.ai/) to choose a supported LiteLLM model string.
@@ -208,6 +208,7 @@ Security best practice:
 
 ## LiteLLM privacy
 
+- LiteLLM is the SDK and routing layer; the configured LLM performs the analysis.
 - `skill-scanner` disables LiteLLM telemetry before making SDK calls.
 - `skill-scanner` clears LiteLLM callback hooks in its SDK integration path.
 - `models.litellm.ai` is documentation for choosing model strings; the package does not query or sync it at runtime.
