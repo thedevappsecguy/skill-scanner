@@ -1,41 +1,25 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 
 from skill_scanner.models.reports import AIReport
 from skill_scanner.models.targets import ScanTarget
 
 
 class LLMProvider(ABC):
-    name: str = "unknown"
+    name: str = "litellm"
 
-    def __init__(self, api_key: str | None, model: str) -> None:
+    def __init__(self, *, api_key: str | None, model: str, base_url: str | None = None) -> None:
         self.api_key = api_key
         self.model = model
+        self.base_url = base_url
 
     @abstractmethod
     async def analyze(self, target: ScanTarget, payload: str) -> AIReport:
         raise NotImplementedError
 
 
-_REGISTRY: dict[str, Callable[[str | None, str], LLMProvider]] = {}
+def create_provider(api_key: str | None, model: str, base_url: str | None = None) -> LLMProvider:
+    from skill_scanner.providers.litellm_provider import LiteLLMProvider
 
-
-def register_provider(name: str) -> Callable[[type[LLMProvider]], type[LLMProvider]]:
-    def decorator(cls: type[LLMProvider]) -> type[LLMProvider]:
-        _REGISTRY[name] = cls
-        return cls
-
-    return decorator
-
-
-def create_provider(name: str, api_key: str | None, model: str) -> LLMProvider:
-    if name not in _REGISTRY:
-        msg = f"Unsupported provider: {name}. Available: {', '.join(sorted(_REGISTRY))}"
-        raise ValueError(msg)
-    return _REGISTRY[name](api_key, model)
-
-
-def available_providers() -> list[str]:
-    return sorted(_REGISTRY)
+    return LiteLLMProvider(api_key=api_key, model=model, base_url=base_url)

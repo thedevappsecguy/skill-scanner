@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import Counter
 from contextlib import AbstractContextManager, nullcontext
@@ -21,13 +22,15 @@ from skill_scanner.output.json_export import export_json_report
 from skill_scanner.output.progress import ScanProgressDisplay
 from skill_scanner.output.sarif_export import export_sarif_report
 from skill_scanner.output.summary import render_summary_report
-from skill_scanner.providers import available_providers, create_provider
+from skill_scanner.providers import create_provider
+from skill_scanner.providers.litellm_provider import check_litellm_connectivity
 from skill_scanner.scoring.risk import evaluate_risk
 
 app = typer.Typer(
     help=(
         "Scan AI skills and instruction artifacts for risky behavior. "
-        "Use `doctor` for API-key setup hints (OPENAI_API_KEY, VT_API_KEY)."
+        "Use `doctor` for model/API setup hints (SKILLSCAN_MODEL, SKILLSCAN_API_KEY, "
+        "SKILLSCAN_BASE_URL, VT_API_KEY)."
     ),
     no_args_is_help=True,
 )
@@ -74,37 +77,44 @@ def discover(
 
 @app.command()
 def providers() -> None:
-    names = available_providers()
-    if not names:
-        console.print("No providers are currently registered.")
-        return
-    console.print("Available providers:")
-    for name in names:
-        console.print(f"- {name}")
+    console.print("AI model selection uses LiteLLM model strings.")
+    console.print("Set SKILLSCAN_MODEL or pass --model with an explicit value from the LiteLLM catalog.")
+    console.print("Examples:")
+    console.print("- openai/gpt-5.4")
+    console.print("- anthropic/<model-name>")
+    console.print("- gemini/<model-name>")
+    console.print("- ollama/<model-name>")
+    console.print("Catalog: https://models.litellm.ai/")
 
 
 @app.command()
 def doctor(
-    provider: str | None = typer.Option(None, help="Provider name override (env: SKILLSCAN_PROVIDER)."),
     model: str | None = typer.Option(None, help="Model override (env: SKILLSCAN_MODEL)."),
+    api_key: str | None = typer.Option(None, help="LLM API key override (env: SKILLSCAN_API_KEY)."),
+    base_url: str | None = typer.Option(
+        None,
+        help="LLM base URL override (env: SKILLSCAN_BASE_URL).",
+    ),
     check: bool = typer.Option(False, "--check", help="Run live provider/API checks."),
     verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logs."),
 ) -> None:
     _configure_logging(verbose)
-    settings = load_settings(provider=provider, model=model)
+    settings = load_settings(model=model, api_key=api_key, base_url=base_url)
 
-    console.print(f"provider={settings.provider}")
-    console.print(f"model={settings.model}")
-    console.print(f"OPENAI_API_KEY={'set' if settings.openai_api_key else 'missing'}")
+    console.print(f"model={settings.model or 'unset'}")
+    console.print(f"SKILLSCAN_API_KEY={'set' if settings.api_key else 'missing'}")
+    console.print(f"SKILLSCAN_BASE_URL={settings.base_url or 'unset'}")
     console.print(f"VT_API_KEY={'set' if settings.vt_api_key else 'missing'}")
     console.print("Hints:")
-    console.print("- Set OpenAI key: export OPENAI_API_KEY=... (or put OPENAI_API_KEY=... in .env)")
-    console.print("- Set VirusTotal key: export VT_API_KEY=... (or put VT_API_KEY=... in .env)")
+    console.print("- Hosted models: set SKILLSCAN_API_KEY=... via env, config file, or --api-key.")
+    console.print("- Local/gateway models: set SKILLSCAN_BASE_URL=... plus a LiteLLM model string.")
+    console.print("- Set VirusTotal key with VT_API_KEY via env, config file, or a secret manager wrapper.")
+    console.print("- `.env` files are not auto-loaded; use `source`, `op run --env-file`, or your shell profile.")
     console.print("- `scan` requires at least one analyzer enabled (AI or VT).")
-    console.print(
-        "- Model fallback: when no model is configured, skill-scanner uses gpt-5.2. "
-        "Use `doctor --check` to verify availability in your account."
-    )
+    console.print("- AI analysis requires an explicit SKILLSCAN_MODEL or --model value.")
+    console.print("- No default model is applied; choose the model you want to use.")
+    console.print("- Use `doctor --check` to verify availability in your account.")
+    console.print("- Model catalog: https://models.litellm.ai/")
 
     if not check:
         return
@@ -112,14 +122,11 @@ def doctor(
     failures = 0
     checks_run = 0
 
-    if settings.provider == "openai":
-        checks_run += 1
-        ok, message = _check_openai(settings.openai_api_key, settings.model)
-        console.print(f"OpenAI check: {'PASS' if ok else 'FAIL'} - {message}")
-        if not ok:
-            failures += 1
-    else:
-        console.print(f"OpenAI check: SKIP - provider '{settings.provider}' is not openai")
+    checks_run += 1
+    ok, message = _check_llm(settings.model, settings.api_key, settings.base_url)
+    console.print(f"LLM check: {'PASS' if ok else 'FAIL'} - {message}")
+    if not ok:
+        failures += 1
 
     if settings.vt_api_key:
         checks_run += 1
@@ -130,7 +137,13 @@ def doctor(
     else:
         console.print("VirusTotal check: SKIP - VT_API_KEY is missing")
 
-    logger.info("doctor --check completed: checks_run=%s failures=%s", checks_run, failures)
+    logger.info(
+        "doctor --check completed: checks_run=%s failures=%s model=%s base_url=%s",
+        checks_run,
+        failures,
+        settings.model or "unset",
+        settings.base_url or "unset",
+    )
     if failures > 0:
         raise typer.Exit(code=1)
 
@@ -146,9 +159,13 @@ def scan(
         help="Target entry path from discovery output, repeat for multiple.",
     ),
     list_targets: bool = typer.Option(False, help="List discovered scan targets and exit."),
-    provider: str | None = typer.Option(None, help="AI provider (env: SKILLSCAN_PROVIDER)."),
     model: str | None = typer.Option(None, help="Model name (env: SKILLSCAN_MODEL)."),
-    no_ai: bool = typer.Option(False, help="Disable AI analysis (OpenAI key env: OPENAI_API_KEY)."),
+    api_key: str | None = typer.Option(None, help="LLM API key override (env: SKILLSCAN_API_KEY)."),
+    base_url: str | None = typer.Option(None, help="LLM base URL override (env: SKILLSCAN_BASE_URL)."),
+    no_ai: bool = typer.Option(
+        False,
+        help="Disable AI analysis (requires generic LLM config via SKILLSCAN_* settings).",
+    ),
     no_vt: bool = typer.Option(False, help="Disable VirusTotal analysis (key env: VT_API_KEY)."),
     jobs: int = typer.Option(8, min=1, help="Maximum concurrent targets to scan."),
     vt_timeout: int = typer.Option(300, min=1, help="VirusTotal analysis timeout in seconds."),
@@ -180,29 +197,32 @@ def scan(
         _print_targets(targets)
         raise typer.Exit()
 
-    settings = load_settings(provider=provider, model=model)
+    settings = load_settings(model=model, api_key=api_key, base_url=base_url)
 
     enable_ai, enable_vt = _resolve_analyzer_selection(settings, no_ai=no_ai, no_vt=no_vt)
     logger.info(
-        "scan config: targets=%s jobs=%s enable_ai=%s enable_vt=%s provider=%s model=%s",
+        "scan config: targets=%s jobs=%s enable_ai=%s enable_vt=%s model=%s base_url=%s",
         len(targets),
         jobs,
         enable_ai,
         enable_vt,
-        settings.provider,
-        settings.model,
+        settings.model or "unset",
+        settings.base_url or "unset",
     )
 
     if not enable_ai and not enable_vt:
         console.print(
             "No analyzers enabled for scan. "
-            "Set OPENAI_API_KEY and/or VT_API_KEY, or enable an analyzer by removing --no-ai/--no-vt."
+            "Configure SKILLSCAN_API_KEY or SKILLSCAN_BASE_URL for AI analysis and/or VT_API_KEY "
+            "for VirusTotal, or enable an analyzer by removing --no-ai/--no-vt."
         )
         raise typer.Exit(code=2)
 
     provider_impl = None
     if enable_ai:
-        provider_impl = create_provider(settings.provider, settings.openai_api_key, settings.model)
+        if settings.model is None:
+            raise typer.Exit(code=2)
+        provider_impl = create_provider(settings.api_key, settings.model, settings.base_url)
 
     with _scan_progress_context(
         total_targets=len(targets),
@@ -255,22 +275,8 @@ def _configure_logging(verbose: bool) -> None:
     )
 
 
-def _check_openai(api_key: str | None, model: str) -> tuple[bool, str]:
-    if not api_key:
-        return False, "OPENAI_API_KEY is missing"
-
-    try:
-        from openai import OpenAI
-    except ImportError:
-        return False, "openai package is unavailable; reinstall skill-scanner"
-
-    try:
-        client = OpenAI(api_key=api_key)
-        client.models.retrieve(model)
-    except Exception as exc:
-        return False, f"OpenAI check failed: {exc}"
-
-    return True, f"Model '{model}' is accessible"
+def _check_llm(model: str | None, api_key: str | None, base_url: str | None) -> tuple[bool, str]:
+    return asyncio.run(check_litellm_connectivity(model=model, api_key=api_key, base_url=base_url))
 
 
 def _should_show_scan_progress(format: str) -> bool:
@@ -324,10 +330,18 @@ def _resolve_analyzer_selection(
     enable_ai = not no_ai
     enable_vt = not no_vt
 
-    if enable_ai and settings.provider == "openai" and not settings.openai_api_key:
+    if enable_ai and not settings.model:
         console.print(
-            "AI analysis disabled: OPENAI_API_KEY is missing. "
-            "Hint: set OPENAI_API_KEY (or use --no-ai)."
+            "AI analysis disabled: SKILLSCAN_MODEL is missing. "
+            "Hint: set SKILLSCAN_MODEL (or use --no-ai)."
+        )
+        enable_ai = False
+
+    if enable_ai and not settings.api_key and not settings.base_url:
+        console.print(
+            "AI analysis disabled: no LLM API key or base URL is configured. "
+            "Hint: set SKILLSCAN_API_KEY for hosted models or SKILLSCAN_BASE_URL for local/gateway models "
+            "(or use --no-ai)."
         )
         enable_ai = False
 
