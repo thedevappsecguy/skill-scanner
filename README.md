@@ -9,22 +9,29 @@
 [![PyPI](https://img.shields.io/pypi/v/skill-scanner.svg)](https://pypi.org/project/skill-scanner/)
 [![Security Policy](https://img.shields.io/badge/security-policy-blue.svg)](https://github.com/thedevappsecguy/skill-scanner/blob/main/SECURITY.md)
 
-`skill-scanner` helps developers review AI skill, instruction, prompt, and agent artifacts before they are trusted in a repo, workstation, or editor extension.
+## Problem
 
 AI skills and instruction bundles are a new software supply-chain and identity attack surface. Developers and agents often treat these files as trusted setup or execution guidance, even though malicious or prompt-injected skills can steal secrets, exfiltrate data, pull remote payloads, and deliver malware through shell commands or other risky behavior.
 
-It discovers known AI skill and instruction files, analyzes them for any hidden and malicious behavior, and produces human-readable and machine-readable results for local review or CI gating.
+## What it does
+
+It discovers AI skills and instruction files, analyzes them for any hidden and malicious behavior, and produces human-readable and machine-readable results for local review or CI gating.
+
+## Analysis
 
 `skill-scanner` combines:
 - LLM analysis
 - VirusTotal analysis
+
+## Use cases
 
 Use it to:
 - review that trust surface before execution
 - surface malicious instructions before a developer runs them
 - validate local workflows or CI with machine-readable security results
 
-Why this matters:
+## Why it matters
+
 - Malicious skills can steal secrets, exfiltrate data, pull remote payloads, and deliver malware.
 - [From magic to malware: How OpenClaw's agent skills become an attack surface](https://1password.com/blog/from-magic-to-malware-how-openclaws-agent-skills-become-an-attack-surface)
 
