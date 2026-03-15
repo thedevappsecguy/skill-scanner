@@ -77,7 +77,7 @@ def discover(
 
 @app.command()
 def providers() -> None:
-    console.print("AI model selection uses LiteLLM model strings.")
+    console.print("LLM model selection uses LiteLLM model strings.")
     console.print("Set SKILLSCAN_MODEL or pass --model with an explicit value from the LiteLLM catalog.")
     console.print("Examples:")
     console.print("- openai/gpt-5.4")
@@ -110,8 +110,8 @@ def doctor(
     console.print("- Local/gateway models: set SKILLSCAN_BASE_URL=... plus a LiteLLM model string.")
     console.print("- Set VirusTotal key with VT_API_KEY via env, config file, or a secret manager wrapper.")
     console.print("- `.env` files are not auto-loaded; use `source`, `op run --env-file`, or your shell profile.")
-    console.print("- `scan` requires at least one analyzer enabled (AI or VT).")
-    console.print("- AI analysis requires an explicit SKILLSCAN_MODEL or --model value.")
+    console.print("- `scan` requires at least one analyzer enabled (LLM or VT).")
+    console.print("- LLM analysis requires an explicit SKILLSCAN_MODEL or --model value.")
     console.print("- No default model is applied; choose the model you want to use.")
     console.print("- Use `doctor --check` to verify availability in your account.")
     console.print("- Model catalog: https://models.litellm.ai/")
@@ -164,7 +164,7 @@ def scan(
     base_url: str | None = typer.Option(None, help="LLM base URL override (env: SKILLSCAN_BASE_URL)."),
     no_ai: bool = typer.Option(
         False,
-        help="Disable AI analysis (requires generic LLM config via SKILLSCAN_* settings).",
+        help="Disable LLM analysis (requires generic LLM config via SKILLSCAN_* settings).",
     ),
     no_vt: bool = typer.Option(False, help="Disable VirusTotal analysis (key env: VT_API_KEY)."),
     jobs: int = typer.Option(8, min=1, help="Maximum concurrent targets to scan."),
@@ -213,7 +213,7 @@ def scan(
     if not enable_ai and not enable_vt:
         console.print(
             "No analyzers enabled for scan. "
-            "Configure SKILLSCAN_API_KEY or SKILLSCAN_BASE_URL for AI analysis and/or VT_API_KEY "
+            "Configure SKILLSCAN_API_KEY or SKILLSCAN_BASE_URL for LLM analysis and/or VT_API_KEY "
             "for VirusTotal, or enable an analyzer by removing --no-ai/--no-vt."
         )
         raise typer.Exit(code=2)
@@ -332,14 +332,14 @@ def _resolve_analyzer_selection(
 
     if enable_ai and not settings.model:
         console.print(
-            "AI analysis disabled: SKILLSCAN_MODEL is missing. "
+            "LLM analysis disabled: SKILLSCAN_MODEL is missing. "
             "Hint: set SKILLSCAN_MODEL (or use --no-ai)."
         )
         enable_ai = False
 
     if enable_ai and not settings.api_key and not settings.base_url:
         console.print(
-            "AI analysis disabled: no LLM API key or base URL is configured. "
+            "LLM analysis disabled: no LLM API key or base URL is configured. "
             "Hint: set SKILLSCAN_API_KEY for hosted models or SKILLSCAN_BASE_URL for local/gateway models "
             "(or use --no-ai)."
         )
@@ -369,18 +369,21 @@ def _severity_rank(value: Severity) -> int:
 def _apply_min_severity_filter(report: ScanReport, min_severity: Severity) -> None:
     filtered_reports: list[SkillReport] = []
     for item in report.reports:
+        filtered_vt_findings = [
+            finding
+            for finding in item.vt_findings
+            if _severity_rank(finding.severity) >= _severity_rank(min_severity)
+        ]
+        filtered_llm_findings = [
+            finding
+            for finding in item.llm_findings
+            if _severity_rank(finding.severity) >= _severity_rank(min_severity)
+        ]
         filtered = item.model_copy(
             update={
-                "deterministic_findings": [
-                    finding
-                    for finding in item.deterministic_findings
-                    if _severity_rank(finding.severity) >= _severity_rank(min_severity)
-                ],
-                "ai_findings": [
-                    finding
-                    for finding in item.ai_findings
-                    if _severity_rank(finding.severity) >= _severity_rank(min_severity)
-                ],
+                "vt_findings": filtered_vt_findings,
+                "llm_findings": filtered_llm_findings,
+                "vt_report": item.vt_report if filtered_vt_findings else None,
             }
         )
         filtered_reports.append(evaluate_risk(filtered))
@@ -423,7 +426,9 @@ def _has_failures(report: object, threshold: Severity) -> bool:
     if not isinstance(report, ScanReport):
         return False
     for item in report.reports:
-        for finding in [*item.deterministic_findings, *item.ai_findings]:
+        if any(note.startswith(("LLM analysis:", "VirusTotal:")) for note in item.notes):
+            return True
+        for finding in [*item.vt_findings, *item.llm_findings]:
             if _severity_rank(finding.severity) >= _severity_rank(threshold):
                 return True
     return False

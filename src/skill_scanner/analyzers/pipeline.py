@@ -5,11 +5,11 @@ import logging
 from collections import Counter
 from collections.abc import Callable
 
-from skill_scanner.analyzers.ai_analyzer import PayloadBuildResult, analyze_with_ai
+from skill_scanner.analyzers.llm_analyzer import PayloadBuildResult, analyze_with_llm
 from skill_scanner.analyzers.vt_analyzer import scan_with_vt
 from skill_scanner.models.findings import Category, Finding, Severity
 from skill_scanner.models.progress import ScanPhase, ScanProgressEvent
-from skill_scanner.models.reports import AIReport, ScanReport, SkillReport, VTReport
+from skill_scanner.models.reports import LLMReport, ScanReport, SkillReport, VTReport
 from skill_scanner.models.targets import ScanTarget
 from skill_scanner.providers.base import LLMProvider
 from skill_scanner.scoring.risk import evaluate_risk
@@ -109,7 +109,7 @@ async def _scan_target(
     logger.info("Scanning target: %s", target.entry_path)
     _emit_progress(progress_callback, target, ScanPhase.START)
 
-    deterministic: list[Finding] = []
+    vt_findings: list[Finding] = []
     notes: list[str] = []
 
     vt_report: VTReport | None = None
@@ -124,30 +124,30 @@ async def _scan_target(
         vt_report = vt_result.report
         if vt_result.error:
             notes.append(f"VirusTotal: {vt_result.error}")
-        deterministic.extend(_vt_findings(vt_report))
+        vt_findings.extend(_vt_findings(vt_report))
         _emit_progress(progress_callback, target, ScanPhase.VT_DONE)
 
-    ai_report = AIReport(provider="disabled", model="n/a", findings=[])
+    llm_report = LLMReport(provider="disabled", model="n/a", findings=[])
     if enable_ai and provider is not None:
-        _emit_progress(progress_callback, target, ScanPhase.AI_STARTED)
-        ai_report, payload_result = await analyze_with_ai(target, provider, vt_report=vt_report)
+        _emit_progress(progress_callback, target, ScanPhase.LLM_STARTED)
+        llm_report, payload_result = await analyze_with_llm(target, provider, vt_report=vt_report)
         notes.extend(_payload_notes(payload_result))
-        filtered_ai_findings, dropped_count = _filter_vt_only_ai_findings(ai_report.findings, vt_report)
+        filtered_llm_findings, dropped_count = _filter_vt_only_llm_findings(llm_report.findings, vt_report)
         if dropped_count > 0:
             notes.append(
-                f"AI output normalized: removed {dropped_count} duplicate VirusTotal-only finding(s)."
+                f"LLM output normalized: removed {dropped_count} duplicate VirusTotal-only finding(s)."
             )
         if dropped_count > 0:
-            ai_report = ai_report.model_copy(update={"findings": filtered_ai_findings})
-        if ai_report.error:
-            notes.append(f"AI analysis: {ai_report.error}")
-        _emit_progress(progress_callback, target, ScanPhase.AI_DONE)
+            llm_report = llm_report.model_copy(update={"findings": filtered_llm_findings})
+        if llm_report.error:
+            notes.append(f"LLM analysis: {llm_report.error}")
+        _emit_progress(progress_callback, target, ScanPhase.LLM_DONE)
 
     _emit_progress(progress_callback, target, ScanPhase.SCORING)
     report = SkillReport(
         target=target,
-        deterministic_findings=deterministic,
-        ai_findings=ai_report.findings,
+        vt_findings=vt_findings,
+        llm_findings=llm_report.findings,
         vt_report=vt_report,
         notes=notes,
     )
@@ -157,7 +157,7 @@ async def _scan_target(
         "Finished target %s: risk=%s findings=%s notes=%s",
         target.entry_path,
         evaluated.risk_level.value,
-        len(evaluated.deterministic_findings) + len(evaluated.ai_findings),
+        len(evaluated.vt_findings) + len(evaluated.llm_findings),
         len(evaluated.notes),
     )
     _emit_progress(progress_callback, target, ScanPhase.DONE)
@@ -185,7 +185,7 @@ def _payload_notes(payload_result: PayloadBuildResult) -> list[str]:
         remaining = len(payload_result.skipped_due_to_limit) - 5
         suffix = "" if remaining <= 0 else f", +{remaining} more"
         notes.append(
-            "AI payload truncated at "
+            "LLM payload truncated at "
             f"{payload_result.max_chars} characters; "
             f"{len(payload_result.skipped_due_to_limit)} file(s) excluded: {sample}{suffix}"
         )
@@ -195,7 +195,7 @@ def _payload_notes(payload_result: PayloadBuildResult) -> list[str]:
         remaining = len(payload_result.skipped_unreadable) - 5
         suffix = "" if remaining <= 0 else f", +{remaining} more"
         notes.append(
-            f"{len(payload_result.skipped_unreadable)} file(s) could not be read for AI payload: {sample}{suffix}"
+            f"{len(payload_result.skipped_unreadable)} file(s) could not be read for LLM payload: {sample}{suffix}"
         )
 
     return notes
@@ -245,7 +245,7 @@ def _vt_findings(vt_report: object) -> list[Finding]:
     return findings
 
 
-def _filter_vt_only_ai_findings(
+def _filter_vt_only_llm_findings(
     findings: list[Finding],
     vt_report: VTReport | None,
 ) -> tuple[list[Finding], int]:

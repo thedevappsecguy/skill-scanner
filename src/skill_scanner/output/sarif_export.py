@@ -18,7 +18,7 @@ def export_sarif_report(report: ScanReport, output: str | None = None) -> str:
     rules: dict[str, dict[str, object]] = {}
 
     for item in report.reports:
-        for finding in [*item.deterministic_findings, *item.ai_findings]:
+        for finding in [*item.vt_findings, *item.llm_findings]:
             rule_id = f"skill-scanner/{finding.category.value}"
             rules[rule_id] = {
                 "id": rule_id,

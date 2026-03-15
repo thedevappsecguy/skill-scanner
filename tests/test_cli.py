@@ -9,7 +9,7 @@ import skill_scanner.cli as cli_module
 from skill_scanner.cli import _apply_min_severity_filter, app
 from skill_scanner.config import Settings
 from skill_scanner.models.findings import Category, Finding, Severity
-from skill_scanner.models.reports import ScanReport, SkillReport
+from skill_scanner.models.reports import RiskLevel, ScanReport, SkillReport, VTReport
 from skill_scanner.models.targets import Platform, ScanTarget, Scope, TargetKind
 
 runner = CliRunner()
@@ -239,7 +239,7 @@ def test_scan_passes_progress_callback_when_terminal(monkeypatch, fixture_root) 
     assert captured["progress_callback"] is callback
 
 
-def test_min_severity_filter_recomputes_score_and_summary() -> None:
+def test_min_severity_filter_recomputes_risk_and_clears_vt_signal() -> None:
     target = ScanTarget(
         id="target-1",
         kind=TargetKind.SKILL,
@@ -254,27 +254,111 @@ def test_min_severity_filter_recomputes_score_and_summary() -> None:
         reports=[
             SkillReport(
                 target=target,
-                deterministic_findings=[
+                vt_findings=[
                     Finding(
-                        source="deterministic",
-                        category=Category.CONFIGURATION_RISK,
-                        severity=Severity.LOW,
-                        title="Low risk",
-                        description="Low severity finding",
+                        source="virustotal",
+                        category=Category.SUPPLY_CHAIN,
+                        severity=Severity.MEDIUM,
+                        title="VirusTotal suspicious verdicts",
+                        description="VirusTotal flagged the artifact as suspicious.",
                     )
                 ],
+                llm_findings=[
+                    Finding(
+                        source="openai",
+                        category=Category.COMMAND_EXECUTION,
+                        severity=Severity.HIGH,
+                        title="Remote script execution instruction",
+                        description="The skill asks users to run an untrusted shell script.",
+                    ),
+                    Finding(
+                        source="openai",
+                        category=Category.CONFIGURATION_RISK,
+                        severity=Severity.LOW,
+                        title="Minor configuration issue",
+                        description="A low-severity note.",
+                    ),
+                ],
+                vt_report=VTReport(
+                    sha256="abc",
+                    malicious=0,
+                    suspicious=1,
+                    harmless=0,
+                    undetected=10,
+                ),
             )
         ],
-        summary={"critical": 0, "high": 0, "medium": 0, "low": 1, "clean": 0},
+        summary={"critical": 0, "high": 1, "medium": 0, "low": 0, "clean": 0},
     )
 
     _apply_min_severity_filter(report, Severity.HIGH)
 
-    assert report.reports[0].deterministic_findings == []
-    assert report.reports[0].ai_findings == []
-    assert report.reports[0].score == 0.0
-    assert report.reports[0].risk_level.value == "clean"
-    assert report.summary == {"critical": 0, "high": 0, "medium": 0, "low": 0, "clean": 1}
+    filtered = report.reports[0]
+    assert filtered.vt_findings == []
+    assert filtered.vt_report is None
+    assert len(filtered.llm_findings) == 1
+    assert filtered.llm_findings[0].title == "Remote script execution instruction"
+    assert filtered.llm_risk_level.value == "high"
+    assert filtered.vt_risk_level.value == "clean"
+    assert filtered.risk_level.value == "high"
+    assert report.summary == {"critical": 0, "high": 1, "medium": 0, "low": 0, "clean": 0}
+
+
+def test_scan_summary_output_omits_numeric_scores(monkeypatch, fixture_root) -> None:
+    target = _scan_target(str(fixture_root / "clean_skill" / "SKILL.md"))
+    report_item = SkillReport(
+        target=target,
+        llm_findings=[
+            Finding(
+                source="openai",
+                category=Category.COMMAND_EXECUTION,
+                severity=Severity.HIGH,
+                title="Remote execution",
+                description="Runs an untrusted command.",
+            )
+        ],
+        llm_risk_level=RiskLevel.HIGH,
+        vt_risk_level=RiskLevel.CLEAN,
+        risk_level=RiskLevel.HIGH,
+    )
+
+    monkeypatch.setattr(
+        cli_module,
+        "load_settings",
+        lambda **_: Settings(
+            model="openai/gpt-5.4",
+            api_key="llm-key",
+            vt_api_key=None,
+        ),
+    )
+    monkeypatch.setattr(cli_module, "create_provider", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        cli_module,
+        "run_scan",
+        lambda targets, **_kwargs: ScanReport(
+            scanned_targets=len(targets),
+            reports=[report_item],
+            summary={"critical": 0, "high": 1, "medium": 0, "low": 0, "clean": 0},
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "scan",
+            "--path",
+            str(fixture_root / "clean_skill"),
+            "--no-vt",
+            "--format",
+            "summary",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Risk: HIGH" in result.stdout
+    assert "Signals: llm=HIGH, vt=CLEAN" in result.stdout
+    assert "Risk: HIGH (" not in result.stdout
+    assert "Signals: llm=HIGH (" not in result.stdout
 
 
 def test_scan_with_only_vt_key_disables_ai_with_hint(monkeypatch, tmp_path) -> None:
@@ -374,6 +458,50 @@ def test_scan_with_local_base_url_and_no_api_key_keeps_ai_enabled(monkeypatch, t
     assert result.exit_code == 0
     assert captured["enable_ai"] is True
     assert captured["enable_vt"] is False
+
+
+def test_scan_fail_on_exits_nonzero_when_analyzer_errors(monkeypatch, fixture_root) -> None:
+    target = _scan_target(str(fixture_root / "clean_skill" / "SKILL.md"))
+    report_item = SkillReport(
+        target=target,
+        notes=["LLM analysis: provider rate limited"],
+    )
+
+    monkeypatch.setattr(
+        cli_module,
+        "load_settings",
+        lambda **_: Settings(
+            model="openai/gpt-5.4",
+            api_key="llm-key",
+            vt_api_key=None,
+        ),
+    )
+    monkeypatch.setattr(cli_module, "create_provider", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        cli_module,
+        "run_scan",
+        lambda targets, **_kwargs: ScanReport(
+            scanned_targets=len(targets),
+            reports=[report_item],
+            summary={"critical": 0, "high": 0, "medium": 0, "low": 0, "clean": 1},
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "scan",
+            "--path",
+            str(fixture_root / "clean_skill"),
+            "--no-vt",
+            "--fail-on",
+            "high",
+            "--format",
+            "summary",
+        ],
+    )
+
+    assert result.exit_code == 1
 
 
 def test_scan_fails_when_no_analyzers_enabled_for_network(monkeypatch, tmp_path) -> None:

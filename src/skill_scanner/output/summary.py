@@ -25,7 +25,7 @@ def _location(finding: Finding) -> str:
 
 
 def _top_findings(report: SkillReport, limit: int = 5) -> list[Finding]:
-    findings = [*report.deterministic_findings, *report.ai_findings]
+    findings = [*report.vt_findings, *report.llm_findings]
     return sorted(
         findings,
         key=lambda item: (
@@ -60,17 +60,17 @@ def format_summary_report(report: ScanReport) -> str:
     for index, item in enumerate(report.reports, start=1):
         lines.append("")
         lines.append(f"Target {index}: {item.target.entry_path}")
-        lines.append(f"Risk: {item.risk_level.value.upper()} ({item.score:.2f})")
+        lines.append(f"Risk: {item.risk_level.value.upper()}")
         lines.append(
             "Signals: "
-            f"ai={item.ai_risk_level.value.upper()} ({item.ai_score:.2f}), "
-            f"vt={item.vt_risk_level.value.upper()} ({item.vt_score:.2f})"
+            f"llm={item.llm_risk_level.value.upper()}, "
+            f"vt={item.vt_risk_level.value.upper()}"
         )
-        total_findings = len(item.deterministic_findings) + len(item.ai_findings)
+        total_findings = len(item.vt_findings) + len(item.llm_findings)
         lines.append(
             "Findings: "
             f"{total_findings} "
-            f"(deterministic={len(item.deterministic_findings)}, ai={len(item.ai_findings)})"
+            f"(vt={len(item.vt_findings)}, llm={len(item.llm_findings)})"
         )
 
         if item.vt_report is None:
