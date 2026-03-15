@@ -30,8 +30,8 @@ def _report_with_category(category: Category) -> ScanReport:
     )
     skill_report = SkillReport(
         target=target,
-        deterministic_findings=[],
-        ai_findings=[finding],
+        vt_findings=[],
+        llm_findings=[finding],
     )
     return ScanReport(
         scanned_targets=1,

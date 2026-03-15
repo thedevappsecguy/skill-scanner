@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from skill_scanner.analyzers.ai_analyzer import analyze_with_ai, build_payload
-from skill_scanner.models.reports import AIReport, VTReport
+from skill_scanner.analyzers.llm_analyzer import analyze_with_llm, build_payload
+from skill_scanner.models.reports import LLMReport, VTReport
 from skill_scanner.models.targets import Platform, ScanTarget, Scope, SkillFile, TargetKind
 from skill_scanner.providers.base import LLMProvider
 
@@ -41,12 +41,12 @@ class _RecordingProvider(LLMProvider):
         super().__init__(api_key="test-key", model="test-model", base_url=None)
         self.last_payload = ""
 
-    async def analyze(self, target: ScanTarget, payload: str) -> AIReport:
+    async def analyze(self, target: ScanTarget, payload: str) -> LLMReport:
         self.last_payload = payload
-        return AIReport(provider=self.name, model=self.model, findings=[])
+        return LLMReport(provider=self.name, model=self.model, findings=[])
 
 
-def test_analyze_with_ai_includes_vt_context(tmp_path: Path) -> None:
+def test_analyze_with_llm_includes_vt_context(tmp_path: Path) -> None:
     skill_file = tmp_path / "SKILL.md"
     skill_file.write_text("content", encoding="utf-8")
     target = ScanTarget(
@@ -70,7 +70,7 @@ def test_analyze_with_ai_includes_vt_context(tmp_path: Path) -> None:
         permalink="https://example.test/vt",
     )
 
-    _, payload_result = asyncio.run(analyze_with_ai(target, provider, vt_report=vt_report))
+    _, payload_result = asyncio.run(analyze_with_llm(target, provider, vt_report=vt_report))
     assert "## VIRUSTOTAL_CONTEXT" in provider.last_payload
     assert "verdict: malicious" in provider.last_payload
     assert "detections: 1/6" in provider.last_payload

@@ -76,6 +76,17 @@ CUSTOM_PATH_PATTERNS: tuple[DiscoveryPattern, ...] = (
 )
 
 
+def _path_string(path: Path) -> str:
+    return path.as_posix()
+
+
+def _user_home() -> Path:
+    home_override = os.environ.get("HOME")
+    if home_override:
+        return Path(home_override).expanduser()
+    return Path.home()
+
+
 @dataclass
 class DiscoveryDiagnostics:
     warnings: list[str] = field(default_factory=list)
@@ -195,7 +206,7 @@ def _to_skill_file(path: Path, root: Path, diagnostics: DiscoveryDiagnostics) ->
         return None
 
     try:
-        relative = str(resolved.relative_to(root))
+        relative = resolved.relative_to(root).as_posix()
     except ValueError:
         relative = resolved.name
 
@@ -206,7 +217,7 @@ def _to_skill_file(path: Path, root: Path, diagnostics: DiscoveryDiagnostics) ->
         return None
 
     return SkillFile(
-        path=str(resolved),
+        path=_path_string(resolved),
         relative_path=relative,
         size=size,
     )
@@ -311,7 +322,7 @@ def _single_file(file_path: Path, root: Path, diagnostics: DiscoveryDiagnostics)
         resolved_root = root
 
     try:
-        relative = str(resolved_file.relative_to(resolved_root))
+        relative = resolved_file.relative_to(resolved_root).as_posix()
     except ValueError:
         relative = resolved_file.name
 
@@ -323,7 +334,7 @@ def _single_file(file_path: Path, root: Path, diagnostics: DiscoveryDiagnostics)
 
     return [
         SkillFile(
-            path=str(resolved_file),
+            path=_path_string(resolved_file),
             relative_path=relative,
             size=size,
         )
@@ -491,11 +502,11 @@ def _targets_from_custom_directory(
                 kind=pattern.kind,
                 platform=pattern.platform,
                 scope=scope,
-                entry_path=str(entry),
-                root_dir=str(entry.parent),
+                entry_path=_path_string(entry),
+                root_dir=_path_string(entry.parent),
                 files=files,
             )
-            discovered[str(entry)] = target
+            discovered[_path_string(entry)] = target
 
     return sorted(discovered.values(), key=lambda item: item.entry_path)
 
@@ -527,8 +538,8 @@ def _targets_from_custom_path(
                 kind=kind,
                 platform=platform,
                 scope=scope,
-                entry_path=str(resolved_path),
-                root_dir=str(resolved_path.parent),
+                entry_path=_path_string(resolved_path),
+                root_dir=_path_string(resolved_path.parent),
                 files=files,
             )
         ]
@@ -571,8 +582,8 @@ def _extension_targets(package_json: Path, diagnostics: DiscoveryDiagnostics) ->
                 kind=TargetKind.SKILL,
                 platform=Platform.VSCODE,
                 scope=Scope.EXTENSION,
-                entry_path=str(skill_md),
-                root_dir=str(skill_md.parent),
+                entry_path=_path_string(skill_md),
+                root_dir=_path_string(skill_md.parent),
                 files=_collect_skill_files(skill_md, diagnostics),
             )
         )
@@ -629,13 +640,13 @@ def discover_targets_with_diagnostics(
                     kind=pattern.kind,
                     platform=pattern.platform,
                     scope=Scope.REPO,
-                    entry_path=str(entry),
-                    root_dir=str(entry.parent),
+                    entry_path=_path_string(entry),
+                    root_dir=_path_string(entry.parent),
                     files=files,
                 )
-                discovered[str(entry)] = target
+                discovered[_path_string(entry)] = target
 
-    home = Path.home()
+    home = _user_home()
     for pattern in USER_PATTERNS:
         if Scope.USER not in selected_scopes or not matches_platform(platform, pattern.platform, pattern.explicit_platform_only):
             continue
@@ -655,11 +666,11 @@ def discover_targets_with_diagnostics(
                 kind=pattern.kind,
                 platform=pattern.platform,
                 scope=Scope.USER,
-                entry_path=str(entry),
-                root_dir=str(entry.parent),
+                entry_path=_path_string(entry),
+                root_dir=_path_string(entry.parent),
                 files=files,
             )
-            discovered[str(entry)] = target
+            discovered[_path_string(entry)] = target
 
     for pattern in SYSTEM_PATTERNS:
         if Scope.SYSTEM not in selected_scopes or not matches_platform(platform, pattern.platform, pattern.explicit_platform_only):
@@ -675,11 +686,11 @@ def discover_targets_with_diagnostics(
                 kind=pattern.kind,
                 platform=pattern.platform,
                 scope=Scope.SYSTEM,
-                entry_path=str(entry),
-                root_dir=str(entry.parent),
+                entry_path=_path_string(entry),
+                root_dir=_path_string(entry.parent),
                 files=_collect_skill_files(entry, diagnostics),
             )
-            discovered[str(entry)] = target
+            discovered[_path_string(entry)] = target
 
     for pattern in EXTENSION_PATTERNS:
         if Scope.EXTENSION not in selected_scopes or not matches_platform(platform, pattern.platform, pattern.explicit_platform_only):

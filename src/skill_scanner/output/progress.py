@@ -68,7 +68,7 @@ def _stage_progress_map(*, enable_ai: bool, enable_vt: bool) -> dict[ScanPhase, 
     if enable_vt:
         ordered.extend([ScanPhase.VT_STARTED, ScanPhase.VT_DONE])
     if enable_ai:
-        ordered.extend([ScanPhase.AI_STARTED, ScanPhase.AI_DONE])
+        ordered.extend([ScanPhase.LLM_STARTED, ScanPhase.LLM_DONE])
     ordered.extend([ScanPhase.SCORING, ScanPhase.DONE])
 
     total_steps = max(len(ordered) - 1, 1)
@@ -86,9 +86,9 @@ def _detail_for_event(event: ScanProgressEvent) -> str:
         ScanPhase.START: "Starting",
         ScanPhase.VT_STARTED: "VirusTotal",
         ScanPhase.VT_DONE: "VirusTotal complete",
-        ScanPhase.AI_STARTED: "LLM analysis",
-        ScanPhase.AI_DONE: "LLM analysis complete",
-        ScanPhase.SCORING: "Scoring",
+        ScanPhase.LLM_STARTED: "LLM analysis",
+        ScanPhase.LLM_DONE: "LLM analysis complete",
+        ScanPhase.SCORING: "Risk classification",
         ScanPhase.DONE: "Completed",
         ScanPhase.FAILED: "Failed",
     }

@@ -3,12 +3,12 @@ from __future__ import annotations
 import asyncio
 
 from skill_scanner.analyzers import pipeline as pipeline_module
-from skill_scanner.analyzers.ai_analyzer import PayloadBuildResult
+from skill_scanner.analyzers.llm_analyzer import PayloadBuildResult
 from skill_scanner.analyzers.pipeline import run_scan
 from skill_scanner.discovery.finder import discover_targets
 from skill_scanner.models.findings import Category, Finding, Severity
 from skill_scanner.models.progress import ScanPhase
-from skill_scanner.models.reports import AIReport, SkillReport, VTReport, VTScanResult
+from skill_scanner.models.reports import LLMReport, SkillReport, VTReport, VTScanResult
 from skill_scanner.models.targets import Platform, ScanTarget, Scope, TargetKind
 
 
@@ -38,15 +38,15 @@ def test_pipeline_adds_vt_derived_findings(monkeypatch, fixture_root) -> None:
     report = run_scan(targets, provider=None, vt_api_key="vt-key", enable_ai=False, enable_vt=True)
     assert any(
         finding.source == "virustotal"
-        for finding in report.reports[0].deterministic_findings
+        for finding in report.reports[0].vt_findings
     )
     assert any(
         finding.category == Category.SUPPLY_CHAIN
-        for finding in report.reports[0].deterministic_findings
+        for finding in report.reports[0].vt_findings
     )
 
 
-def test_pipeline_passes_vt_context_to_ai(monkeypatch, fixture_root) -> None:
+def test_pipeline_passes_vt_context_to_llm(monkeypatch, fixture_root) -> None:
     targets = discover_targets(path=str(fixture_root / "clean_skill"), platform=Platform.ALL)
 
     async def _fake_scan_with_vt(*_args, **_kwargs) -> VTScanResult:
@@ -65,21 +65,21 @@ def test_pipeline_passes_vt_context_to_ai(monkeypatch, fixture_root) -> None:
 
     captured: dict[str, object] = {}
 
-    async def _fake_analyze_with_ai(target, provider, vt_report=None):
+    async def _fake_analyze_with_llm(target, provider, vt_report=None):
         captured["vt_report"] = vt_report
         return (
-            AIReport(provider="test", model="test", findings=[]),
+            LLMReport(provider="test", model="test", findings=[]),
             PayloadBuildResult(payload="payload", included_files=1),
         )
 
-    monkeypatch.setattr(pipeline_module, "analyze_with_ai", _fake_analyze_with_ai)
+    monkeypatch.setattr(pipeline_module, "analyze_with_llm", _fake_analyze_with_llm)
 
     report = run_scan(targets, provider=object(), vt_api_key="vt-key", enable_ai=True, enable_vt=True)
     assert report.scanned_targets == 1
     assert isinstance(captured.get("vt_report"), VTReport)
 
 
-def test_pipeline_drops_vt_only_ai_duplicates_without_file_evidence(monkeypatch, fixture_root) -> None:
+def test_pipeline_drops_vt_only_llm_duplicates_without_file_evidence(monkeypatch, fixture_root) -> None:
     targets = discover_targets(path=str(fixture_root / "clean_skill"), platform=Platform.ALL)
 
     async def _fake_scan_with_vt(*_args, **_kwargs) -> VTScanResult:
@@ -96,9 +96,9 @@ def test_pipeline_drops_vt_only_ai_duplicates_without_file_evidence(monkeypatch,
             )
         )
 
-    async def _fake_analyze_with_ai(*_args, **_kwargs):
+    async def _fake_analyze_with_llm(*_args, **_kwargs):
         return (
-            AIReport(
+            LLMReport(
                 provider="litellm",
                 model="openai/gpt-5.4",
                 findings=[
@@ -123,16 +123,16 @@ def test_pipeline_drops_vt_only_ai_duplicates_without_file_evidence(monkeypatch,
                 ],
             ),
             PayloadBuildResult(payload="payload", included_files=1),
-        )
+    )
 
     monkeypatch.setattr(pipeline_module, "scan_with_vt", _fake_scan_with_vt)
-    monkeypatch.setattr(pipeline_module, "analyze_with_ai", _fake_analyze_with_ai)
+    monkeypatch.setattr(pipeline_module, "analyze_with_llm", _fake_analyze_with_llm)
 
     report = run_scan(targets, provider=object(), vt_api_key="vt-key", enable_ai=True, enable_vt=True)
     target_report = report.reports[0]
 
-    assert len(target_report.ai_findings) == 1
-    assert target_report.ai_findings[0].title == "Remote script execution instruction"
+    assert len(target_report.llm_findings) == 1
+    assert target_report.llm_findings[0].title == "Remote script execution instruction"
     assert any("removed 1 duplicate VirusTotal-only finding" in note for note in target_report.notes)
 
 
@@ -161,12 +161,12 @@ def test_pipeline_parallelism_preserves_input_order(monkeypatch) -> None:
     assert [item.target.id for item in report.reports] == [item.id for item in targets]
 
 
-def test_pipeline_adds_notes_for_truncation_and_ai_errors(monkeypatch, fixture_root) -> None:
+def test_pipeline_adds_notes_for_truncation_and_llm_errors(monkeypatch, fixture_root) -> None:
     targets = discover_targets(path=str(fixture_root / "clean_skill"), platform=Platform.ALL)
 
-    async def _fake_analyze_with_ai(*_args, **_kwargs):
+    async def _fake_analyze_with_llm(*_args, **_kwargs):
         return (
-            AIReport(provider="litellm", model="openai/gpt-5.4", findings=[], error="mock failure"),
+            LLMReport(provider="litellm", model="openai/gpt-5.4", findings=[], error="mock failure"),
             PayloadBuildResult(
                 payload="payload",
                 included_files=1,
@@ -174,11 +174,11 @@ def test_pipeline_adds_notes_for_truncation_and_ai_errors(monkeypatch, fixture_r
             ),
         )
 
-    monkeypatch.setattr(pipeline_module, "analyze_with_ai", _fake_analyze_with_ai)
+    monkeypatch.setattr(pipeline_module, "analyze_with_llm", _fake_analyze_with_llm)
 
     report = run_scan(targets, provider=object(), vt_api_key=None, enable_ai=True, enable_vt=False)
-    assert any("AI payload truncated" in note for note in report.reports[0].notes)
-    assert any("AI analysis" in note for note in report.reports[0].notes)
+    assert any("LLM payload truncated" in note for note in report.reports[0].notes)
+    assert any("LLM analysis" in note for note in report.reports[0].notes)
 
 
 def test_pipeline_emits_progress_events_for_target_phases(monkeypatch, fixture_root) -> None:
@@ -195,14 +195,14 @@ def test_pipeline_emits_progress_events_for_target_phases(monkeypatch, fixture_r
             )
         )
 
-    async def _fake_analyze_with_ai(*_args, **_kwargs):
+    async def _fake_analyze_with_llm(*_args, **_kwargs):
         return (
-            AIReport(provider="litellm", model="openai/gpt-5.4", findings=[]),
+            LLMReport(provider="litellm", model="openai/gpt-5.4", findings=[]),
             PayloadBuildResult(payload="payload", included_files=1),
         )
 
     monkeypatch.setattr(pipeline_module, "scan_with_vt", _fake_scan_with_vt)
-    monkeypatch.setattr(pipeline_module, "analyze_with_ai", _fake_analyze_with_ai)
+    monkeypatch.setattr(pipeline_module, "analyze_with_llm", _fake_analyze_with_llm)
 
     phases: list[ScanPhase] = []
 
@@ -222,8 +222,8 @@ def test_pipeline_emits_progress_events_for_target_phases(monkeypatch, fixture_r
         ScanPhase.START,
         ScanPhase.VT_STARTED,
         ScanPhase.VT_DONE,
-        ScanPhase.AI_STARTED,
-        ScanPhase.AI_DONE,
+        ScanPhase.LLM_STARTED,
+        ScanPhase.LLM_DONE,
         ScanPhase.SCORING,
         ScanPhase.DONE,
     ]

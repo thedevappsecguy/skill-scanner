@@ -9,9 +9,24 @@
 [![PyPI](https://img.shields.io/pypi/v/skill-scanner.svg)](https://pypi.org/project/skill-scanner/)
 [![Security Policy](https://img.shields.io/badge/security-policy-blue.svg)](https://github.com/thedevappsecguy/skill-scanner/blob/main/SECURITY.md)
 
-`skill-scanner` reviews AI skill and instruction artifacts for security risk using:
+`skill-scanner` helps developers review AI skill, instruction, prompt, and agent artifacts before they are trusted in a repo, workstation, or editor extension.
+
+AI skills and instruction bundles are a new software supply-chain and identity attack surface. Developers and agents often treat these files as trusted setup or execution guidance, even though malicious or prompt-injected skills can steal secrets, exfiltrate data, pull remote payloads, and deliver malware through shell commands or other risky behavior.
+
+It discovers known AI skill and instruction files, analyzes them for any hidden and malicious behavior, and produces human-readable and machine-readable results for local review or CI gating.
+
+`skill-scanner` combines:
 - LLM analysis
 - VirusTotal analysis
+
+Use it to:
+- review that trust surface before execution
+- surface malicious instructions before a developer runs them
+- validate local workflows or CI with machine-readable security results
+
+Why this matters:
+- Malicious skills can steal secrets, exfiltrate data, pull remote payloads, and deliver malware.
+- [From magic to malware: How OpenClaw's agent skills become an attack surface](https://1password.com/blog/from-magic-to-malware-how-openclaws-agent-skills-become-an-attack-surface)
 
 ## Architecture flow
 
@@ -51,20 +66,22 @@ uv run skillscan --help
 
 ## What gets scanned
 
-By default, `discover` and `scan` detect markdown-based skill/instruction artifacts (for example `SKILL.md`, `AGENTS.md`, `CLAUDE.md`, `*.instructions.md`, `*.prompt.md`, `*.agent.md`, `.mdc`).
+By default, `discover` and `scan` detect common AI skill, instruction, prompt, agent, rule, and command artifacts such as `SKILL.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `copilot-instructions.md`, `*.instructions.md`, `*.prompt.md`, `*.agent.md`, `.claude/commands/*.md`, `.mdc`, and `.cursorrules`. It also inspects installed VS Code extension `package.json` manifests to find contributed chat skills and then discovers the referenced `SKILL.md` files.
 
-Validated skill locations also include:
+Default discovered locations follow the documented conventions for:
 
-- Windsurf: `.windsurf/skills/*/SKILL.md`, `~/.codeium/windsurf/skills/*/SKILL.md`
-- Gemini CLI: `.gemini/skills/*/SKILL.md`, `~/.gemini/skills/*/SKILL.md` (`.agents/skills/*/SKILL.md` when `--platform gemini`)
-- Cline: `.cline/skills/*/SKILL.md`, `.clinerules/skills/*/SKILL.md`, `~/.cline/skills/*/SKILL.md`, `~/.clinerules/skills/*/SKILL.md`
-- OpenCode: `.opencode/skills/*/SKILL.md`, `~/.config/opencode/skills/*/SKILL.md` (`.agents/skills/*/SKILL.md` and `.claude/skills/*/SKILL.md` when `--platform opencode`)
-- Claude marketplace/user variants: `.claude/skills/SKILL.md`, `.claude/skills/*/SKILL.md`, and
-  `.claude/plugins/marketplaces/*/{plugins,external_plugins}/*/skills/*/SKILL.md`
-- Documented agent profile locations: `.claude/agents/*.md`, `.gemini/agents/*.md`,
-  `.gemini/extensions/*/agents/*.md`, `.opencode/agents/*.md`, `~/.config/opencode/agents/*.md`,
-  `.github/agents/**/*.agent.md`, and `agents/*.agent.md`
-- Skill discovery supports both flat and nested layouts: `skills/SKILL.md` and `skills/<name>/SKILL.md`
+- [Codex](https://openai.com/codex/): `AGENTS.md`, `.agents/skills/`, and `.codex/skills/`
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview): `CLAUDE.md`, `.claude/skills/`, `.claude/agents/`, `.claude/commands/`, and Claude marketplace skill directories
+- [GitHub Copilot](https://docs.github.com/en/copilot/reference/customization-cheat-sheet): `.github/copilot-instructions.md`, `.github/instructions/`, `.github/skills/`, and repo-local agent files
+- [VS Code AI customization](https://code.visualstudio.com/docs/copilot/customization/custom-instructions): `AGENTS.md`, `.github/prompts/`, `.github/agents/`, and prompt/instruction files used by editor-integrated chat flows
+- [VS Code extensions](https://code.visualstudio.com/api/get-started/extension-anatomy): installed extension manifests are inspected for contributed chat skills, and referenced `SKILL.md` files are discovered as extension-scope targets
+- [Cursor](https://docs.cursor.com/en/context): `.cursor/rules/` (`.mdc`), `.cursorrules`, and `.cursor/skills/`
+- [Windsurf](https://docs.windsurf.com/windsurf/cascade/skills): `.windsurf/skills/` and `~/.codeium/windsurf/skills/`
+- [Gemini CLI](https://github.com/google-gemini/gemini-cli): `GEMINI.md`, `.gemini/skills/`, `.gemini/agents/`, and `.gemini/extensions/`
+- [Cline](https://docs.cline.bot/customization/cline-rules): `.cline/skills/` and `.clinerules/`
+- [OpenCode](https://opencode.ai/docs/skills): `.opencode/skills/` and `.opencode/agents/`
+
+The scanner also supports repo, user, system, and extension variants of these locations where they are implemented in the tool or documented by the vendor.
 
 Use `--path` to target a specific file or folder.
 `--path` discovery is deterministic and only emits files that match known discovery roots/patterns
@@ -108,6 +125,7 @@ uv run skill-scanner scan --format summary
 - If both LLM config and `VT_API_KEY` are available, both analyzers run and VT context is passed into the LLM analysis.
 - You can disable either analyzer with `--no-ai` or `--no-vt`.
 - LLM analysis requires an explicit `SKILLSCAN_MODEL` or `--model` value.
+- When `--fail-on` is set, analyzer failures surfaced in notes also cause a non-zero exit to avoid false-clean scans.
 
 Use `doctor --check` to verify model/API/base URL connectivity.
 Use [`models.litellm.ai`](https://models.litellm.ai/) to choose a supported LiteLLM model string.
@@ -206,14 +224,7 @@ Important:
 Security best practice:
 - Prefer a 1Password Service Account scoped to only the vault/items required for scanning (least privilege).
 
-## LiteLLM privacy
-
-- LiteLLM is the SDK and routing layer; the configured LLM performs the analysis.
-- `skill-scanner` disables LiteLLM telemetry before making SDK calls.
-- `skill-scanner` clears LiteLLM callback hooks in its SDK integration path.
-- `models.litellm.ai` is documentation for choosing model strings; the package does not query or sync it at runtime.
-
-Reference:
+References:
 - https://developer.1password.com/docs/cli/secret-references/
 - https://developer.1password.com/docs/cli/reference/commands/run/
 - https://developer.1password.com/docs/service-accounts/
@@ -227,7 +238,13 @@ Reference:
 - `sarif`
 
 You can write output to a file with `--output <path>`.
+For `json`, `sarif`, and `summary`, the written file matches the selected format.
+For `table`, the terminal still shows the Rich table and `--output` writes JSON.
 Interactive `table` and `summary` scans show a live Rich progress bar while targets are being analyzed.
+
+Risk output is severity-classified, not numerically scored.
+The final `risk_level` is the strongest surviving signal from `llm` and `vt`.
+Structured output exposes `llm_findings`, `vt_findings`, `llm_risk_level`, `vt_risk_level`, `risk_level`, `vt_report`, and `notes`.
 
 ## Useful commands
 
@@ -286,7 +303,7 @@ Windows known-path sanity check:
 ## Exit behavior
 
 - `0`: scan completed and fail threshold not hit
-- `1`: `--fail-on` threshold matched
+- `1`: `--fail-on` threshold matched, or an analyzer failure was recorded while `--fail-on` was set
 - `2`: no analyzers enabled (for example missing keys combined with flags), or `--target` did not match any discovered target
 
 `doctor --check` exit behavior:
@@ -299,7 +316,8 @@ Windows known-path sanity check:
 `scan` now surfaces per-target notes in table and summary output, including:
 
 - analyzer failures (LLM or VirusTotal)
-- payload truncation when files are skipped due to the 400k-character AI payload limit
+- VirusTotal timeout fallback when the latest available file verdict is used
+- payload truncation when files are skipped due to the 400k-character LLM payload limit
 - unreadable files excluded from payload construction
 
 ## Contributing
@@ -312,7 +330,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, testing, and PR guidelines.
 - [x] Support multiple providers via LiteLLM model strings
 - [ ] Baseline / suppression / false-positive management
 - [x] Ollama / local LLM provider support via LiteLLM `base_url`
-- [ ] Configurable risk scoring
+- [ ] Configurable risk classification policy
 - [ ] GitHub Actions template for automated scans
 - [ ] Improve fixtures to include realistic malicious skills
 

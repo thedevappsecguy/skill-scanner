@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from skill_scanner.models.reports import AIReport
+from skill_scanner.models.reports import LLMReport
 from skill_scanner.models.targets import ScanTarget
 
 
@@ -15,7 +15,7 @@ class LLMProvider(ABC):
         self.base_url = base_url
 
     @abstractmethod
-    async def analyze(self, target: ScanTarget, payload: str) -> AIReport:
+    async def analyze(self, target: ScanTarget, payload: str) -> LLMReport:
         raise NotImplementedError
 
 

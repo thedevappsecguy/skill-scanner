@@ -13,7 +13,7 @@ from skill_scanner.models.findings import (
     canonicalize_category,
     observed_pattern_specs_for_prompt,
 )
-from skill_scanner.models.reports import AIReport
+from skill_scanner.models.reports import LLMReport
 from skill_scanner.models.targets import ScanTarget
 from skill_scanner.providers.base import LLMProvider
 from skill_scanner.utils.retry import RetryableError, async_retry_with_backoff
@@ -58,6 +58,12 @@ def _load_litellm_module() -> Any:
 
 def _configure_litellm_runtime(litellm_module: Any) -> None:
     litellm_module.telemetry = False
+    if hasattr(litellm_module, "suppress_debug_info"):
+        litellm_module.suppress_debug_info = True
+    if hasattr(litellm_module, "set_verbose"):
+        litellm_module.set_verbose = False
+    if hasattr(litellm_module, "turn_off_message_logging"):
+        litellm_module.turn_off_message_logging = True
     for attr in (
         "callbacks",
         "success_callback",
@@ -88,7 +94,7 @@ def _normalize_finding(item: dict[str, Any], *, source: str) -> Finding:
         source=source,
         category=category,
         severity=Severity(severity),
-        title=str(item.get("title", "AI finding")),
+        title=str(item.get("title", "LLM finding")),
         description=str(item.get("description", "")),
         file_path=item.get("file_path"),
         line=item.get("line"),
@@ -132,7 +138,7 @@ class LiteLLMProvider(LLMProvider):
     def __init__(self, *, api_key: str | None, model: str, base_url: str | None = None) -> None:
         super().__init__(api_key=api_key, model=model, base_url=base_url)
         if not model.strip():
-            raise ValueError("A LiteLLM model string is required for AI analysis")
+            raise ValueError("A LiteLLM model string is required for LLM analysis")
 
         litellm_module = _load_litellm_module()
         _configure_litellm_runtime(litellm_module)
@@ -169,7 +175,7 @@ class LiteLLMProvider(LLMProvider):
             kwargs["base_url"] = self.base_url
         return kwargs
 
-    async def analyze(self, target: ScanTarget, payload: str) -> AIReport:
+    async def analyze(self, target: ScanTarget, payload: str) -> LLMReport:
         async def _call() -> str:
             try:
                 response = await self._litellm.acompletion(
@@ -197,7 +203,7 @@ class LiteLLMProvider(LLMProvider):
             data = json.loads(raw)
         except Exception as exc:
             logger.warning("LiteLLM analysis failed for %s: %s", target.entry_path, exc)
-            return AIReport(provider=self.name, model=self.model, findings=[], error=str(exc))
+            return LLMReport(provider=self.name, model=self.model, findings=[], error=str(exc))
 
         findings: list[Finding] = []
         source = _provider_source(self.model)
@@ -208,7 +214,7 @@ class LiteLLMProvider(LLMProvider):
                 findings.append(_normalize_finding(item, source=source))
             except Exception:
                 continue
-        return AIReport(provider=self.name, model=self.model, findings=findings, raw_response=raw)
+        return LLMReport(provider=self.name, model=self.model, findings=findings, raw_response=raw)
 
 
 async def check_litellm_connectivity(

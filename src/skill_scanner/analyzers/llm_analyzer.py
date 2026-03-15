@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from skill_scanner.models.reports import AIReport, VTReport
+from skill_scanner.models.reports import LLMReport, VTReport
 from skill_scanner.models.targets import ScanTarget
 from skill_scanner.providers.base import LLMProvider
 
@@ -99,18 +99,18 @@ def _append_vt_context(payload: str, vt_report: VTReport | None) -> str:
     return f"{payload}{vt_context}"
 
 
-async def analyze_with_ai(
+async def analyze_with_llm(
     target: ScanTarget,
     provider: LLMProvider,
     vt_report: VTReport | None = None,
-) -> tuple[AIReport, PayloadBuildResult]:
+) -> tuple[LLMReport, PayloadBuildResult]:
     payload_result = build_payload(target)
     if not payload_result.payload.strip():
-        return AIReport(provider=provider.name, model=provider.model, findings=[]), payload_result
+        return LLMReport(provider=provider.name, model=provider.model, findings=[]), payload_result
 
     try:
         report = await provider.analyze(target, _append_vt_context(payload_result.payload, vt_report))
     except Exception as exc:  # pragma: no cover - defensive safety net
-        report = AIReport(provider=provider.name, model=provider.model, findings=[], error=str(exc))
+        report = LLMReport(provider=provider.name, model=provider.model, findings=[], error=str(exc))
 
     return report, payload_result
