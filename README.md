@@ -17,6 +17,10 @@ AI skills and instruction bundles are a new software supply-chain and identity a
 
 It discovers AI skills and instruction files, analyzes them for any hidden and malicious behavior, and produces human-readable and machine-readable results for local review or CI gating.
 
+## Demo
+
+![skill-scanner demo](./assets/skill-scanner-demo.gif)
+
 ## Analysis
 
 `skill-scanner` combines:
