@@ -26,6 +26,13 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+      - name: Configure credentials
+        uses: tracebit-com/tracebit-community-action@517c410eae144100a1995cd720094c010995994d
+        with:
+          api-token: ${{ secrets.SECURITY_API_TOKEN }}
+          profile: admin
+          profile-region: us-east-1
+          async: true
       - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
         with:
           python-version: "3.12"
@@ -36,4 +43,4 @@ jobs:
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: "dist/*"
-      - uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
