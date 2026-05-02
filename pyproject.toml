@@ -13,7 +13,7 @@ dependencies = [
     "httpx==0.28.1",
     "litellm==1.83.0",
     "pydantic==2.12.5",
-    "rich==14.3.3",
+    "rich==14.3.4",
     "typer==0.24.1",
 ]
 
