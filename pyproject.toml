@@ -1,6 +1,6 @@
 [project]
 name = "skill-scanner"
-version = "0.3.2"
+version = "0.3.3"
 description = "Security scanner for detecting and remediating malicious AI agent skills and instruction artifacts"
 readme = "README.md"
 authors = [{ name = "skill-scanner" }]
@@ -11,10 +11,10 @@ classifiers = [
 ]
 dependencies = [
     "httpx==0.28.1",
-    "litellm==1.83.10",
-    "pydantic==2.12.5",
+    "litellm==1.85.0",
+    "pydantic==2.13.4",
     "rich==15.0.0",
-    "typer==0.23.1",
+    "typer==0.25.1",
 ]
 
 [dependency-groups]

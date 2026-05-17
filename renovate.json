@@ -65,6 +65,20 @@
       ]
     },
     {
+      "groupName": "LiteLLM Dependency Stack",
+      "groupSlug": "litellm-dependency-stack",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchPackageNames": [
+        "click",
+        "litellm",
+        "pydantic",
+        "pydantic-core",
+        "typer"
+      ]
+    },
+    {
       "matchUpdateTypes": [
         "major"
       ]
