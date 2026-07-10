@@ -11,10 +11,10 @@ classifiers = [
 ]
 dependencies = [
     "httpx==0.28.1",
-    "litellm==1.88.0",
+    "litellm==1.90.3",
     "pydantic==2.13.4",
     "rich==15.0.0",
-    "typer==0.26.7",
+    "typer==0.26.8",
 ]
 
 [dependency-groups]
