@@ -11,18 +11,18 @@ classifiers = [
 ]
 dependencies = [
     "httpx==0.28.1",
-    "litellm==1.88.0",
+    "litellm==1.90.3",
     "pydantic==2.13.4",
     "rich==15.0.0",
-    "typer==0.26.7",
+    "typer==0.26.8",
 ]
 
 [dependency-groups]
 dev = [
     "mypy==2.1.0",
-    "pytest==9.0.3",
+    "pytest==9.1.1",
     "pytest-cov==7.1.0",
-    "ruff==0.15.16",
+    "ruff==0.15.20",
 ]
 
 [project.scripts]
